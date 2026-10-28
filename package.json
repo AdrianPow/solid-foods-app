@@ -1,0 +1,16 @@
+{
+  "name": "first-bites",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A starting-solids food guide and tracker for parents.",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node --test \"tests/*.test.js\"",
+    "build:artifact": "node scripts/build-artifact.mjs",
+    "icons": "node scripts/render-icons.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2"
+  }
+}

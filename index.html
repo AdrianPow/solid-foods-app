@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>First Bites</title>
+<meta name="description" content="A starting-solids food guide and tracker for the whole family.">
+<meta name="theme-color" content="#2f6f3a" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121611" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="First Bites">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,400;0,600;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,500..800&display=swap">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<!-- app:start -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#foods" aria-label="First Bites home">
+      <span class="brand-tile" aria-hidden="true"><span>Fb</span></span>
+      <span class="brand-name">First Bites</span>
+    </a>
+    <nav class="tabs" aria-label="Sections">
+      <a class="tab" href="#foods" data-view="foods">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg>
+        <span>Foods</span>
+      </a>
+      <a class="tab" href="#progress" data-view="progress">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V10M12 20V4M19 20v-7"/></svg>
+        <span>Progress</span>
+      </a>
+      <a class="tab" href="#guide" data-view="guide">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h10a4 4 0 0 1 4 4v12H9a4 4 0 0 1-4-4z M5 16a4 4 0 0 1 4-4h10"/></svg>
+        <span>Guide</span>
+      </a>
+      <a class="tab" href="#setup" data-view="setup">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
+        <span>Baby</span>
+      </a>
+    </nav>
+    <a class="baby-chip" href="#setup" id="baby-chip"></a>
+  </div>
+</header>
+
+<main id="view" tabindex="-1"></main>
+
+<dialog id="food-sheet" class="sheet" aria-labelledby="sheet-title"></dialog>
+<dialog id="log-dialog" class="sheet sheet-narrow" aria-labelledby="log-title"></dialog>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<!-- app:end -->
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
