@@ -12,17 +12,18 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - run: npm test
 
-  # Publishes the app to GitHub Pages from the main branch. Turn Pages on
-  # first: Settings > Pages > Build and deployment > Source: GitHub Actions.
+  # Publishes the app to GitHub Pages from the repository's default branch.
+  # Turn Pages on first: Settings > Pages > Build and deployment > Source:
+  # GitHub Actions.
   deploy:
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       pages: write
@@ -34,7 +35,7 @@ jobs:
       group: pages
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Collect site files
         run: |
           mkdir _site

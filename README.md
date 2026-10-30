@@ -42,10 +42,9 @@ There are three ways to run it. All use the same code.
 
 ### Publish on GitHub Pages
 
-1. Merge this branch into `main`.
-2. In the repository, go to **Settings → Pages → Build and deployment** and set **Source** to **GitHub Actions**.
-3. The workflow in `.github/workflows/pages.yml` runs the tests and publishes the site to `https://<your-username>.github.io/solid-foods-app/`.
-4. Open that address on each phone and add it to the home screen (iPhone: Safari → Share → Add to Home Screen; Android: browser menu → Install app). It works offline.
+1. In the repository, go to **Settings → Pages → Build and deployment** and set **Source** to **GitHub Actions**.
+2. The workflow in `.github/workflows/pages.yml` runs the tests and publishes the site to `https://<your-username>.github.io/solid-foods-app/` on every push to the repository's default branch. You can also run it by hand from the **Actions** tab (**Test and deploy → Run workflow**).
+3. Open that address on each phone and add it to the home screen (iPhone: Safari → Share → Add to Home Screen; Android: browser menu → Install app). It works offline.
 
 **About privacy:** on GitHub's Free and Pro plans, a GitHub Pages site is always public. Only GitHub Enterprise can limit who opens it. The app asks search engines not to list it, but anyone with the link can open the food guide. Your baby's log is never part of the site: it stays on each phone, or, with sync set up, in your own Firebase database, which only your two accounts can read.
 
@@ -72,7 +71,7 @@ Firebase is Google's app database service. The free plan is plenty for this app.
    ```
 
    This config isn't a secret (it only names your project), so it's fine in a public repository. The rules from step 3 are what keep the data private.
-7. Commit the change to `main`. Once the site redeploys, open the **Baby** tab on each phone and sign in. If a phone already has tries saved from before, tap **Add them to the shared log**.
+7. Commit the change to the default branch. Once the site redeploys, open the **Baby** tab on each phone and sign in. If a phone already has tries saved from before, tap **Add them to the shared log**.
 
 After that, a try logged on either phone shows up on the other within seconds. Logging works offline too, and catches up when the phone reconnects.
 
