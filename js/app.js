@@ -210,6 +210,7 @@ function renderFoods() {
       </div>
     </div>
     ${needsBaby ? `<div class="notice"><p>Add your baby's birth date to see the right serving stage for their age.</p><a class="btn btn-small" href="#setup">Add baby details</a></div>` : ""}
+    <div id="install-notice">${installNoticeHTML()}</div>
     <div class="filters">
       <label class="search">
         ${ICON.search}
@@ -850,9 +851,9 @@ function renderSetup() {
           <textarea class="input" id="export-text" readonly></textarea>
         </div>
       </section>
-      ${ownDevice ? `<section class="panel">
+      ${ownDevice && !install.standalone ? `<section class="panel">
         <h2>Install on your phone</h2>
-        <p class="muted">On iPhone, open this page in Safari, tap Share, then <strong>Add to Home Screen</strong>. On Android, open the browser menu and tap <strong>Install app</strong>. It works offline once installed.</p>
+        <div id="install-box">${installHTML()}</div>
       </section>` : ""}
       ${canWrite() ? `<section class="panel">
         <h2>Start over</h2>
@@ -1126,6 +1127,17 @@ document.addEventListener("click", (e) => {
     case "retry-cloud":
       startCloud();
       break;
+    case "install":
+      promptInstall();
+      break;
+    case "install-dismiss":
+      try {
+        localStorage.setItem(INSTALL_DISMISSED_KEY, "1");
+      } catch {
+        // Storage blocked: the notice just comes back next time.
+      }
+      refreshInstallUI();
+      break;
   }
 });
 
@@ -1185,6 +1197,71 @@ logDialog.addEventListener("click", (e) => {
 window.addEventListener("hashchange", route);
 
 // ---------- boot ----------
+
+// ---------- install to home screen ----------
+
+// Chrome offers installing through the beforeinstallprompt event. Keep it and
+// show our own button, since the browser menu option moves between versions.
+const install = {
+  prompt: null,
+  standalone: matchMedia("(display-mode: standalone)").matches || navigator.standalone === true,
+};
+const INSTALL_DISMISSED_KEY = "first-bites:install-dismissed";
+
+function installDismissed() {
+  try {
+    return localStorage.getItem(INSTALL_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function installHTML() {
+  const iphone = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  if (install.prompt) {
+    return `<p class="muted">Add First Bites to your home screen. It opens like a normal app and works offline.</p>
+      <div class="button-row"><button type="button" class="btn btn-primary" data-action="install">Install First Bites</button></div>`;
+  }
+  if (iphone) {
+    return `<p class="muted">Open this page in Safari, tap the Share button, then <strong>Add to Home Screen</strong>. It works offline once installed.</p>`;
+  }
+  return `<p class="muted">An <strong>Install First Bites</strong> button appears here when your browser is ready to install it. If it doesn't, open the browser menu and look for <strong>Install app</strong> or <strong>Add to home screen</strong>. It works offline once installed.</p>`;
+}
+
+function installNoticeHTML() {
+  if (!install.prompt || install.standalone || installDismissed()) return "";
+  return `<div class="notice"><p>Install First Bites on your home screen for one-tap access, even offline.</p>
+    <div class="button-row"><button type="button" class="btn btn-small btn-primary" data-action="install">Install</button><button type="button" class="btn btn-small btn-quiet" data-action="install-dismiss">Not now</button></div></div>`;
+}
+
+function refreshInstallUI() {
+  const box = $("#install-box");
+  if (box) box.innerHTML = installHTML();
+  const notice = $("#install-notice");
+  if (notice) notice.innerHTML = installNoticeHTML();
+}
+
+async function promptInstall() {
+  const event = install.prompt;
+  if (!event) return;
+  install.prompt = null;
+  event.prompt();
+  const { outcome } = await event.userChoice;
+  if (outcome === "accepted") toast("Installing First Bites…");
+  refreshInstallUI();
+}
+
+window.addEventListener("beforeinstallprompt", (e) => {
+  e.preventDefault();
+  install.prompt = e;
+  refreshInstallUI();
+});
+
+window.addEventListener("appinstalled", () => {
+  install.prompt = null;
+  refreshInstallUI();
+  toast("Installed. Open First Bites from your home screen.");
+});
 
 function registerServiceWorker() {
   if (window.claude || !("serviceWorker" in navigator)) return;
