@@ -76,3 +76,15 @@ test("guide sections have content", () => {
     assert.ok(s.id && s.title && s.intro, s.id);
   }
 });
+
+test("sync config is either off (null) or a Firebase settings object", async () => {
+  // A syntax error here would stop the published app from syncing, so catch
+  // it before deploying.
+  const { FIREBASE_CONFIG } = await import("../js/sync-config.js");
+  if (FIREBASE_CONFIG === null) return;
+  assert.equal(typeof FIREBASE_CONFIG, "object");
+  for (const key of ["apiKey", "authDomain", "projectId", "appId"]) {
+    assert.equal(typeof FIREBASE_CONFIG[key], "string", `FIREBASE_CONFIG.${key}`);
+    assert.ok(FIREBASE_CONFIG[key].length > 0, `FIREBASE_CONFIG.${key} is filled in`);
+  }
+});

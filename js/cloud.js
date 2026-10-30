@@ -1,18 +1,35 @@
 // Loads Firebase only when js/sync-config.js has a config, and wraps the few
 // calls the app needs: sign-in state, sign in/out, password reset.
 
-import { FIREBASE_CONFIG } from "./sync-config.js";
-
 // Kept in a variable so bundlers leave it alone: the SDK is a separate file
 // that is only downloaded when syncing is configured.
 const SDK_PATH = "./vendor/firebase.js";
 
-export const cloudConfigured = !!(FIREBASE_CONFIG && FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.projectId);
+// The config file is edited by hand, so load it on its own: a typo there
+// should turn syncing off with a message, not stop the whole app loading.
+// Resolves { config } when sync is set up, { config: null } when it is
+// switched off, or { error } when the file can't be used.
+export async function readSyncConfig() {
+  let mod;
+  try {
+    mod = await import("./sync-config.js");
+  } catch {
+    return { config: null, error: "js/sync-config.js has a mistake in it. It should contain only the settings between { and } from Firebase." };
+  }
+  const config = mod.FIREBASE_CONFIG;
+  if (config == null) return { config: null };
+  if (typeof config !== "object" || !config.apiKey || !config.projectId) {
+    return { config: null, error: "js/sync-config.js is missing the apiKey or projectId from Firebase." };
+  }
+  return { config };
+}
 
+let FIREBASE_CONFIG = null;
 let loading = null;
 
-export function loadCloud() {
-  if (!cloudConfigured) return Promise.reject(new Error("Syncing isn't set up."));
+export function loadCloud(config) {
+  if (config) FIREBASE_CONFIG = config;
+  if (!FIREBASE_CONFIG) return Promise.reject(new Error("Syncing isn't set up."));
   loading ||= (async () => {
     const fb = await import(SDK_PATH);
     const app = fb.initializeApp(FIREBASE_CONFIG);

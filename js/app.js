@@ -4,7 +4,7 @@ import { GUIDE } from "./data/guide.js";
 import { ICONS, ICON_VIEWBOX } from "./data/icons.js";
 import * as L from "./logic.js";
 import { CloudStore, LocalStore, describeStoreError, getDeviceName, openStore, readLocalState, setDeviceName } from "./store.js";
-import { cloudConfigured, describeAuthError, loadCloud } from "./cloud.js";
+import { describeAuthError, loadCloud, readSyncConfig } from "./cloud.js";
 
 const KNOWN_IDS = new Set(FOODS.map((f) => f.id));
 const CAT_LABEL = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.label]));
@@ -26,6 +26,8 @@ const app = {
   pushedFood: false,
   cloud: { status: "off" },
   cloudApi: null,
+  syncConfig: null,
+  syncConfigError: "",
   stage: null,
 };
 
@@ -750,7 +752,13 @@ function syncHTML() {
       </div>
     </div></div>`;
   }
-  if (cloudConfigured && !window.claude) {
+  if (app.syncConfigError && !window.claude) {
+    return `<div class="sync-state"><span class="sync-dot"></span><div>
+      <p><strong>Syncing is off.</strong> ${esc(app.syncConfigError)}</p>
+      <p class="muted">Tries are being saved on this phone for now.</p>
+    </div></div>`;
+  }
+  if (app.syncConfig && !window.claude) {
     if (app.cloud.status === "loading") return `<div class="sync-state"><span class="sync-dot"></span><p>Connecting to sync…</p></div>`;
     if (app.cloud.status === "error") {
       return `<div class="sync-state"><span class="sync-dot"></span><div>
@@ -1205,7 +1213,7 @@ async function startCloud() {
   app.cloud = { status: "loading" };
   if (app.view === "setup") refreshSetup();
   try {
-    const cloud = await loadCloud();
+    const cloud = await loadCloud(app.syncConfig);
     app.cloudApi = cloud;
     cloud.onUser((user) => {
       if (user) {
@@ -1272,7 +1280,14 @@ async function boot() {
   mountIconSprite();
   route();
   attachStore(await openStore(KNOWN_IDS));
-  if (app.store.mode === "local" && cloudConfigured && !window.claude) startCloud();
+  if (app.store.mode === "local" && !window.claude) {
+    const { config, error } = await readSyncConfig();
+    app.syncConfig = config;
+    app.syncConfigError = error || "";
+    if (error) console.error(error);
+    if (config) startCloud();
+    else if (app.view === "setup") refreshSetup();
+  }
   registerServiceWorker();
 }
 
