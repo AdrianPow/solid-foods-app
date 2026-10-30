@@ -1,6 +1,6 @@
 // Offline support for the installed app: serve the app shell from cache,
 // refresh it in the background when online.
-const CACHE = "first-bites-v1";
+const CACHE = "first-bites-v2";
 const SHELL = [
   "./",
   "index.html",
@@ -12,6 +12,8 @@ const SHELL = [
   "js/logic.js",
   "js/store.js",
   "js/data/index.js",
+  "js/data/icons.js",
+  "js/data/food-icons.js",
   "js/data/define.js",
   "js/data/meta.js",
   "js/data/guide.js",

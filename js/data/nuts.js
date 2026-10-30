@@ -55,6 +55,7 @@ export default [
     tips: [WHOLE_NUTS, "Walnut allergy is often linked with pecan allergy.", KEEP_IT_UP],
   }),
   food("pecan", "Pecan", C, {
+    ss: "pecans",
     aka: ["pecans"],
     allergens: ["treenut"],
     choking: "high",
@@ -82,6 +83,7 @@ export default [
     tips: [WHOLE_NUTS, "Choose unsalted. Pistachio allergy is often linked with cashew allergy."],
   }),
   food("macadamia", "Macadamia", C, {
+    ss: "macadamia-nut",
     allergens: ["treenut"],
     choking: "high",
     s6: "Finely ground macadamias or thinned macadamia butter.",
@@ -137,6 +139,7 @@ export default [
     tips: ["A good plant source of iron and zinc. Whole seeds are a choking hazard."],
   }),
   food("chia", "Chia seeds", C, {
+    ss: "chia-seed",
     choking: "prep",
     s6: "Soaked chia pudding or soaked seeds stirred into yogurt or oatmeal.",
     s9: "Soaked chia in foods.",
@@ -144,6 +147,7 @@ export default [
     tips: ["Always soak chia first. Dry seeds swell when wet and can be a choking risk."],
   }),
   food("flaxseed", "Flaxseed", C, {
+    ss: "flaxseed-linseed",
     aka: ["linseed", "flax"],
     s6: "Ground flaxseed stirred into oatmeal or yogurt.",
     s9: "Ground flaxseed in foods and baking.",
@@ -151,10 +155,30 @@ export default [
     tips: ["Ground flax is easier to digest and absorb than whole seeds."],
   }),
   food("hemp-seed", "Hemp seeds", C, {
+    ss: "hemp-seed-hemp-heart",
     aka: ["hemp hearts"],
     s6: "Hemp hearts sprinkled on foods, or used to coat slippery fruit for grip.",
     s9: "Sprinkled on foods.",
     s12: "Sprinkled on foods.",
     tips: ["Soft and tiny. Great for adding grip and healthy fats."],
+  }),
+  food("chestnut", "Chestnut", C, {
+    aka: ["chestnuts", "chestnut puree"],
+    allergens: ["treenut"],
+    choking: "prep",
+    s6: "Roasted or boiled chestnuts mashed into a puree, or chestnut flour in baking.",
+    s9: "Cooked chestnuts mashed or finely crumbled.",
+    s12: "Cooked chestnuts crumbled into small pieces.",
+    tips: [
+      "Cooked chestnuts are soft and starchy, unlike other nuts, but whole ones are still a choking risk.",
+      "Chestnuts are grouped with tree nuts for allergy labeling, though allergy to them is less common.",
+    ],
+  }),
+  food("poppy-seed", "Poppy seeds", C, {
+    aka: ["poppy seed"],
+    s6: "Baked into muffins and breads.",
+    s9: "Baked goods or sprinkled lightly on foods.",
+    s12: "Baked goods.",
+    tips: ["Use food-grade poppy seeds in normal baking amounts. Never make tea or drinks from unwashed poppy seeds."],
   }),
 ];

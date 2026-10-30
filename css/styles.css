@@ -1,5 +1,5 @@
 /* Layout: a field guide for the high chair. Sticky header, a filter rail,
-   a periodic-table grid of food tiles (age number, symbol, name), and a
+   a periodic-table grid of food tiles (age number, icon, name), and a
    detail sheet that slides up over it. */
 :root {
   --paper: #f6f8f1;
@@ -693,13 +693,24 @@ main {
   text-underline-offset: 3px;
 }
 
-.tile-sym {
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 2.125rem;
-  line-height: 1;
-  letter-spacing: -0.03em;
-  margin: 10px 0 6px;
+.tile-icon {
+  width: 44px;
+  height: 44px;
+  margin: 8px 0 6px;
+  flex: none;
+}
+
+/* Dark berries and nuts need a faint outline on dark tiles. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .food-icon,
+  :root:not([data-theme="light"]) .tile-icon {
+    filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.45));
+  }
+}
+
+:root[data-theme="dark"] .food-icon,
+:root[data-theme="dark"] .tile-icon {
+  filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.45));
 }
 
 .tile-name {
@@ -924,6 +935,21 @@ main {
   background: var(--tile);
   color: var(--t-ink);
   position: relative;
+}
+
+.big-tile .food-icon {
+  width: 52px;
+  height: 52px;
+}
+
+.big-tile-small {
+  width: 52px;
+  height: 52px;
+}
+
+.big-tile-small .food-icon {
+  width: 36px;
+  height: 36px;
 }
 
 .big-tile[data-cat="fruit"] { --tile: var(--t-fruit); }
@@ -1488,6 +1514,16 @@ fieldset {
   padding: 0;
 }
 
+.mini-tile .food-icon {
+  width: 26px;
+  height: 26px;
+}
+
+.queue-item .mini-tile .food-icon {
+  width: 20px;
+  height: 20px;
+}
+
 .mini-tile[data-cat="fruit"] { --tile: var(--t-fruit); }
 .mini-tile[data-cat="veg"] { --tile: var(--t-veg); }
 .mini-tile[data-cat="grain"] { --tile: var(--t-grain); }
@@ -1689,6 +1725,20 @@ fieldset {
   display: grid;
   gap: 12px;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+}
+
+.form-inline {
+  padding: 0;
+  gap: 12px;
+  margin-top: 12px;
+  max-width: 420px;
+}
+
+.sync-state > div {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
 }
 
 .sync-state {

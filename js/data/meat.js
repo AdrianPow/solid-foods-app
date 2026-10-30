@@ -4,6 +4,7 @@ const C = "meat";
 
 export default [
   food("beef", "Beef", C, {
+    ss: "steak",
     aka: ["steak", "roast beef", "brisket"],
     iron: true,
     choking: "prep",
@@ -28,7 +29,7 @@ export default [
     ],
   }),
   food("lamb", "Lamb", C, {
-    aka: ["mutton"],
+    aka: ["lamb chops", "ground lamb", "lamb shank"],
     iron: true,
     choking: "prep",
     s6: "Slow-cooked lamb in large strips, a lamb rib bone with meat to gnaw (gristle removed), or ground lamb in kofta.",
@@ -37,7 +38,7 @@ export default [
     tips: ["Remove loose fat, gristle and small bones."],
   }),
   food("pork", "Pork", C, {
-    aka: ["pork chop", "pulled pork", "ground pork"],
+    aka: ["pork chop", "pulled pork", "ground pork", "ribs", "spare ribs"],
     iron: true,
     choking: "prep",
     s6: "Pulled pork or large strips of tender pork shoulder, or ground pork patties.",
@@ -49,7 +50,7 @@ export default [
     ],
   }),
   food("chicken", "Chicken", C, {
-    aka: ["chicken breast", "chicken thigh", "drumstick"],
+    aka: ["chicken breast", "chicken thigh", "drumstick", "ground chicken"],
     iron: true,
     choking: "prep",
     s6: "A drumstick with skin, cartilage and loose bits removed, for gnawing; or shredded thigh meat; or soft chicken meatballs.",
@@ -61,6 +62,7 @@ export default [
     ],
   }),
   food("turkey", "Turkey", C, {
+    aka: ["ground turkey"],
     iron: true,
     choking: "prep",
     s6: "Ground turkey meatballs or patties, or shredded moist dark meat.",
@@ -69,6 +71,7 @@ export default [
     tips: ["Dark meat is moister and higher in iron. Cook to 165°F (74°C)."],
   }),
   food("duck", "Duck", C, {
+    aka: ["goose"],
     iron: true,
     choking: "prep",
     s6: "Shredded cooked duck leg meat with skin and fat removed.",
@@ -77,6 +80,7 @@ export default [
     tips: ["Rich in iron. Remove crispy skin and bones."],
   }),
   food("liver", "Liver", C, {
+    ss: "chicken-liver",
     aka: ["chicken liver", "beef liver", "pate"],
     iron: true,
     s6: "Cooked liver blended into a smooth pate spread thinly on toast, or a little mixed into ground meat.",
@@ -134,10 +138,70 @@ export default [
     tips: ["Heat deli meats until steaming to reduce listeria risk."],
   }),
   food("broth", "Broth", C, {
+    ss: "bone-broth",
     aka: ["stock", "bone broth"],
     s6: "Homemade, unsalted broth to cook grains and vegetables in, or in an open cup a few sips at a time.",
     s9: "Unsalted broth in soups and stews.",
     s12: "Low-sodium broth in meals.",
     tips: ["Store-bought broth and stock cubes are very salty. Choose no-salt-added versions."],
+  }),
+  food("veal", "Veal", C, {
+    iron: true,
+    choking: "prep",
+    s6: "Tender slow-cooked veal in large strips to gnaw, or ground veal in soft meatballs.",
+    s9: "Shredded or finely chopped veal.",
+    s12: "Thin slices or small pieces.",
+    tips: ["Cook ground veal to 160°F (71°C)."],
+  }),
+  food("goat-meat", "Goat meat", C, {
+    aka: ["goat", "mutton", "chevon"],
+    iron: true,
+    choking: "prep",
+    s6: "Slow-cooked goat curry or stew, meat shredded off the bone, with sauce.",
+    s9: "Shredded or finely chopped goat.",
+    s12: "Small tender pieces in stews and curries.",
+    tips: ["Remove all small bones and gristle. Slow cooking makes it tender."],
+  }),
+  food("venison", "Venison", C, {
+    aka: ["deer", "elk"],
+    ss: "venison-deer",
+    iron: true,
+    choking: "prep",
+    s6: "Ground venison in soft meatballs or patties, or slow-cooked strips.",
+    s9: "Crumbled into sauces or shredded.",
+    s12: "Small pieces or thin slices.",
+    tips: [
+      "Very lean and rich in iron.",
+      "Hunted game can contain fragments of lead shot. Choose farmed venison, or meat processed to remove the area around the wound.",
+    ],
+  }),
+  food("rabbit", "Rabbit", C, {
+    iron: true,
+    choking: "prep",
+    s6: "Slow-cooked rabbit shredded off the bone, mixed with sauce.",
+    s9: "Shredded rabbit.",
+    s12: "Small pieces.",
+    tips: ["Rabbit has many small, thin bones. Check every piece carefully."],
+  }),
+  food("bone-marrow", "Bone marrow", C, {
+    iron: true,
+    s6: "Roasted marrow scooped out and spread thinly on toast or stirred into rice.",
+    s9: "Scooped marrow spread on toast.",
+    s12: "Spread on toast.",
+    tips: ["Serve only the scooped marrow. Never give bone pieces, which can splinter."],
+  }),
+  food("chorizo", "Chorizo", C, {
+    age: 12,
+    choking: "high",
+    wait: "Chorizo is very salty and usually spicy, and cured types are processed meat.",
+    s12: "Occasional small amounts, cooked through and finely chopped into eggs or beans.",
+    tips: ["Fresh Mexican-style chorizo is raw and must be fully cooked. Spanish-style chorizo is cured."],
+  }),
+  food("pepperoni", "Pepperoni", C, {
+    age: 12,
+    choking: "prep",
+    wait: "Pepperoni is a salty, cured processed meat.",
+    s12: "Occasional, in small chopped pieces on pizza. Whole rounds are chewy.",
+    tips: ["Turkey pepperoni is still high in salt."],
   }),
 ];

@@ -10,7 +10,7 @@
 //   s6/s9/s12 how to serve it at each stage, in plain words
 //   tips      short safety and nutrition notes
 //   ss        Solid Starts page slug (defaults to id); null for no direct link
-//   sym       two-letter tile symbol (defaults to the first letters of name)
+//   icon      tile icon key (defaults to js/data/food-icons.js, then the category icon)
 // })
 export function food(id, name, cat, o = {}) {
   return {
@@ -26,11 +26,6 @@ export function food(id, name, cat, o = {}) {
     serve: { 6: o.s6 || "", 9: o.s9 || "", 12: o.s12 || "" },
     tips: o.tips || [],
     ss: o.ss === undefined ? id : o.ss,
-    sym: o.sym || symbolFor(name),
+    icon: o.icon || "",
   };
-}
-
-function symbolFor(name) {
-  const letters = name.replace(/[^A-Za-z]/g, "");
-  return letters.charAt(0).toUpperCase() + letters.charAt(1).toLowerCase();
 }

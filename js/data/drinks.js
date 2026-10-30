@@ -4,6 +4,7 @@ const C = "drinks";
 
 export default [
   food("water", "Water", C, {
+    ss: null,
     s6: "Small sips from an open cup or straw cup with meals, about 4–8 oz (120–240 ml) a day in total.",
     s9: "Sips from an open cup or straw cup with meals.",
     s12: "Offer water throughout the day.",
@@ -15,7 +16,7 @@ export default [
   food("cows-milk", "Cow's milk", C, {
     aka: ["milk", "whole milk"],
     allergens: ["milk"],
-    ss: "cow-milk",
+    ss: "milk",
     age: 12,
     wait: "Before 12 months, cow's milk should not replace breast milk or formula as a drink. Using it in cooking (oatmeal, sauces) is fine from 6 months.",
     s12: "Whole (full-fat) milk in an open or straw cup, up to about 16–24 oz (480–720 ml) a day.",
@@ -71,6 +72,7 @@ export default [
     tips: ["A splash of prune or pear juice may be suggested by your doctor for constipation."],
   }),
   food("smoothie", "Smoothie", C, {
+    ss: null,
     s6: "Thick smoothies (fruit, yogurt, nut butter) from an open cup or on a spoon.",
     s9: "From an open cup or straw cup.",
     s12: "From a cup. A handy way to add greens and seeds.",
@@ -80,7 +82,18 @@ export default [
     aka: ["caffeine", "soda"],
     age: null,
     wait: "Caffeinated drinks are not recommended for young children.",
-    ss: null,
+    ss: "tea",
     tips: ["Herbal teas are not recommended either; some herbs are unsafe for babies."],
+  }),
+  food("coconut-water", "Coconut water", C, {
+    age: 12,
+    wait: "Coconut water has natural sugar, like juice. Before 12 months, stick to breast milk, formula and water.",
+    s12: "Small amounts occasionally, in an open cup.",
+    tips: ["Plain water is the best everyday drink."],
+  }),
+  food("kombucha", "Kombucha", C, {
+    age: null,
+    wait: "Kombucha can contain small amounts of alcohol and caffeine, and unpasteurized versions carry a food safety risk. It's not recommended for young children.",
+    tips: ["Offer water or milk instead."],
   }),
 ];

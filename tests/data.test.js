@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { FOODS } from "../js/data/index.js";
 import { ALLERGENS, CATEGORIES, CHOKING } from "../js/data/meta.js";
 import { GUIDE } from "../js/data/guide.js";
+import { ICONS } from "../js/data/icons.js";
+import { FOOD_ICONS } from "../js/data/food-icons.js";
 
 const categoryIds = new Set(CATEGORIES.map((c) => c.id));
 const allergenIds = new Set(ALLERGENS.map((a) => a.id));
@@ -21,7 +23,7 @@ test("every food has a valid category, choking level and allergens", () => {
     assert.ok(categoryIds.has(f.cat), `${f.id}: category ${f.cat}`);
     assert.ok(f.choking in CHOKING, `${f.id}: choking ${f.choking}`);
     for (const a of f.allergens) assert.ok(allergenIds.has(a), `${f.id}: allergen ${a}`);
-    assert.ok(f.sym.length >= 1 && f.sym.length <= 3, `${f.id}: symbol`);
+    assert.ok(ICONS[f.icon], `${f.id}: icon "${f.icon}" exists`);
   }
 });
 
@@ -57,6 +59,16 @@ test("every allergen has at least one food that can be offered at 6 months", () 
   for (const a of ALLERGENS) {
     assert.ok(FOODS.some((f) => f.allergens.includes(a.id) && f.age === 6), a.id);
   }
+});
+
+test("every food has its own icon mapping, and no mapping is stale", () => {
+  const ids = new Set(FOODS.map((f) => f.id));
+  for (const f of FOODS) assert.ok(FOOD_ICONS[f.id], `${f.id} has an entry in food-icons.js`);
+  for (const id of Object.keys(FOOD_ICONS)) assert.ok(ids.has(id), `food-icons.js entry ${id} matches a food`);
+});
+
+test("Solid Starts links are slugs, not URLs", () => {
+  for (const f of FOODS) if (f.ss) assert.match(f.ss, /^[a-z0-9-]+$/, f.id);
 });
 
 test("guide sections have content", () => {

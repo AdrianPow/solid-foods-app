@@ -25,7 +25,7 @@ function spice(id, name, o) {
 
 export default [
   herb("basil", "Basil", { s6: "Finely chopped fresh basil in tomato sauce, or blended into nut-free pesto." }),
-  herb("cilantro", "Cilantro", { aka: ["coriander leaves"] }),
+  herb("cilantro", "Cilantro", { ss: "cilantro-coriander", aka: ["coriander leaves"] }),
   herb("parsley", "Parsley", {}),
   herb("mint", "Mint", { s6: "Finely chopped fresh mint stirred into yogurt or peas." }),
   herb("dill", "Dill", { s6: "Finely chopped dill in yogurt dips, eggs or fish." }),
@@ -50,6 +50,7 @@ export default [
     tips: ["Some blends contain mustard or chili. Start mild."],
   }),
   spice("chili", "Chili pepper", {
+    ss: "chili-pepper",
     aka: ["chilli", "cayenne", "jalapeno", "hot sauce"],
     s6: "If your family eats spicy food, a tiny amount in shared dishes is fine. Start very mild.",
     s9: "Small amounts of mild heat in family dishes.",
@@ -59,4 +60,33 @@ export default [
     s6: "Vanilla bean seeds or a few drops of extract cooked into oatmeal or baked goods.",
     tips: ["Extract contains alcohol, so add it to foods that get cooked."],
   }),
+  spice("allspice", "Allspice", { aka: ["pimento"], s6: "A pinch in stews, jerk dishes or baked fruit." }),
+  herb("bay-leaf", "Bay leaf", {
+    aka: ["bay leaves", "curry leaves"],
+    s6: "Simmer whole leaves in soups and stews for flavor, then remove them.",
+    s9: "Cooked into dishes and removed before serving.",
+    s12: "Cooked into dishes and removed before serving.",
+    tips: ["Always take out whole bay leaves before serving. They stay stiff and sharp."],
+  }),
+  herb("chives", "Chives", { s6: "Finely snipped chives stirred into eggs, potatoes or yogurt." }),
+  spice("cloves", "Cloves", { s6: "A pinch of ground cloves in baked fruit or oatmeal.", tips: ["Remove whole cloves before serving. They are hard and sharp."] }),
+  spice("coriander-seed", "Coriander seed", { aka: ["ground coriander"], s6: "A pinch of ground coriander in lentils, curries or roasted vegetables." }),
+  spice("fennel-seed", "Fennel seed", { s6: "A pinch of ground fennel seed in sauces, meatballs or lentils.", tips: ["Grind whole seeds or use them where they can be strained out."] }),
+  spice("fenugreek", "Fenugreek", { aka: ["methi"], s6: "A pinch of ground fenugreek or a few chopped cooked leaves in dal or curry.", tips: ["Fenugreek can make sweat and pee smell like maple syrup. Harmless."] }),
+  herb("lemongrass", "Lemongrass", {
+    s6: "Bruised stalks simmered in soups and curries for flavor, then removed.",
+    s9: "Finely minced tender inner core cooked into dishes.",
+    s12: "Finely minced or removed after cooking.",
+    tips: ["The outer stalk is woody and fibrous. Remove pieces before serving."],
+  }),
+  herb("marjoram", "Marjoram", {}),
+  spice("mustard-seed", "Mustard seed", { s6: "A pinch of ground mustard in sauces, or whole seeds tempered in oil for dal.", tips: ["Mustard is a listed allergen in the UK, EU and Canada."] }),
+  spice("saffron", "Saffron", { s6: "A few threads soaked in warm water and stirred into rice or sauces.", tips: ["A little goes a long way. Large amounts are not safe."] }),
+  herb("sage", "Sage", { s6: "Finely chopped or a pinch of dried sage in squash, meat or beans." }),
+  spice("star-anise", "Star anise", {
+    s6: "A whole pod simmered in broth or stewed fruit for flavor, then removed.",
+    tips: ["Only use Chinese star anise for cooking. Japanese star anise is toxic and looks almost the same.", "Remove whole pods before serving."],
+  }),
+  spice("sumac", "Sumac", { s6: "A pinch over hummus, eggs or roasted vegetables for a lemony tang." }),
+  herb("tarragon", "Tarragon", { s6: "Finely chopped tarragon in eggs, chicken or yogurt dips." }),
 ];

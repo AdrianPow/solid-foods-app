@@ -4,8 +4,10 @@
 // different phones share by exporting a backup and importing it (merge).
 //
 // SharedStore is used when the page runs as a claude.ai Artifact with the
-// `db` capability: every log entry is its own document, so two people
-// logging at the same time never overwrite each other.
+// `db` capability, and CloudStore when the app is hosted elsewhere with a
+// Firebase project configured (js/sync-config.js). In both, every log entry
+// is its own document, so two people logging at once never overwrite each
+// other.
 
 import { cleanLog, cleanProfile, emptyState, mergeBackup } from "./logic.js";
 
@@ -75,6 +77,11 @@ function loadLocalState(knownFoodIds) {
   return state;
 }
 
+// This device's saved log, read without opening a store.
+export function readLocalState(knownFoodIds) {
+  return loadLocalState(knownFoodIds);
+}
+
 export class LocalStore extends Emitter {
   constructor(knownFoodIds) {
     super();
@@ -84,11 +91,16 @@ export class LocalStore extends Emitter {
     this.state = loadLocalState(knownFoodIds);
     this.persisted = writeJSON(STATE_KEY, this.state);
     // Keep several open tabs in step.
-    window.addEventListener("storage", (e) => {
+    this.onStorage = (e) => {
       if (e.key !== STATE_KEY) return;
       this.state = loadLocalState(knownFoodIds);
       this.emit();
-    });
+    };
+    window.addEventListener("storage", this.onStorage);
+  }
+
+  dispose() {
+    window.removeEventListener("storage", this.onStorage);
   }
 
   commit(next) {
@@ -142,6 +154,8 @@ export class LocalStore extends Emitter {
 // Messages for errors a viewer can do something about.
 export function describeStoreError(err) {
   const code = err && err.code;
+  if (code === "permission-denied") return "This account isn't allowed to use the shared log. Check the email addresses in your Firestore rules.";
+  if (code === "unauthenticated") return "You've been signed out. Sign in again on the Baby tab to keep syncing.";
   if (code === "invalid_argument") return "You can view this tracker but not change it. Ask the owner to give you edit access.";
   if (code === "quota_exceeded") return "The shared tracker is full. Export a backup and delete old entries to make room.";
   if (code === "resource_exhausted") return "Too many changes at once. Wait a moment and try again.";
@@ -266,6 +280,146 @@ export class SharedStore extends Emitter {
     for (const id of Object.keys(this.state.logs)) await this.deleteLog(id);
     for (const foodId of Object.keys(this.state.queue)) await this.setQueued(foodId, false);
     await withRetry(() => this.db.doc("meta/profile").delete());
+  }
+}
+
+// Firestore-backed store for the GitHub Pages version. Writes go to the local
+// offline cache first, so they show up immediately and sync when online;
+// we don't wait for the server before returning.
+export class CloudStore extends Emitter {
+  constructor(cloud, user, knownFoodIds) {
+    super();
+    this.mode = "cloud";
+    this.canWrite = true;
+    this.cloud = cloud;
+    this.user = user;
+    this.knownFoodIds = knownFoodIds;
+    this.state = emptyState();
+    this.loaded = { logs: false, queue: false, profile: false };
+    this.pendingWrites = false;
+    this.onError = () => {};
+    this.unsubs = [];
+  }
+
+  get ready() {
+    return this.loaded.logs && this.loaded.queue && this.loaded.profile;
+  }
+
+  get email() {
+    return this.user.email || "";
+  }
+
+  start() {
+    const { fb, db } = this.cloud;
+    const fail = (err) => this.onError(err);
+    this.unsubs.push(
+      fb.onSnapshot(fb.collection(db, "logs"), { includeMetadataChanges: true }, (snap) => {
+        const logs = {};
+        for (const d of snap.docs) {
+          const log = cleanLog({ ...d.data(), id: d.id }, this.knownFoodIds);
+          if (log) logs[log.id] = log;
+        }
+        this.loaded.logs = true;
+        this.pendingWrites = snap.metadata.hasPendingWrites;
+        this.state = { ...this.state, logs };
+        this.emit();
+      }, fail),
+      fb.onSnapshot(fb.collection(db, "queue"), (snap) => {
+        const queue = {};
+        for (const d of snap.docs) {
+          if (this.knownFoodIds.has(d.id)) queue[d.id] = { foodId: d.id, addedAt: Number(d.data().addedAt) || 0 };
+        }
+        this.loaded.queue = true;
+        this.state = { ...this.state, queue };
+        this.emit();
+      }, fail),
+      fb.onSnapshot(fb.doc(db, "meta", "profile"), (snap) => {
+        this.loaded.profile = true;
+        this.state = { ...this.state, profile: snap.exists() ? cleanProfile(snap.data()) : {} };
+        this.emit();
+      }, fail),
+    );
+  }
+
+  dispose() {
+    for (const unsub of this.unsubs) unsub();
+    this.unsubs = [];
+  }
+
+  // Fire-and-forget: the offline cache applies the write right away.
+  send(promise) {
+    promise.catch((err) => this.onError(err));
+  }
+
+  displayName() {
+    return getDeviceName() || this.email.split("@")[0];
+  }
+
+  async me() {
+    return { id: this.user.uid, name: this.displayName() };
+  }
+
+  async profiles() {
+    return {};
+  }
+
+  async saveLog(log) {
+    const { fb, db } = this.cloud;
+    const entry = JSON.parse(JSON.stringify({ ...log, by: log.by || this.user.uid, byName: log.byName || this.displayName() }));
+    this.send(fb.setDoc(fb.doc(db, "logs", log.id), entry));
+  }
+
+  async deleteLog(id) {
+    const { fb, db } = this.cloud;
+    this.send(fb.deleteDoc(fb.doc(db, "logs", id)));
+  }
+
+  async setQueued(foodId, on) {
+    const { fb, db } = this.cloud;
+    const ref = fb.doc(db, "queue", foodId);
+    this.send(on ? fb.setDoc(ref, { foodId, addedAt: Date.now() }) : fb.deleteDoc(ref));
+  }
+
+  async setProfile(patch) {
+    const { fb, db } = this.cloud;
+    this.send(fb.setDoc(fb.doc(db, "meta", "profile"), patch, { merge: true }));
+  }
+
+  // Firestore batches hold up to 500 writes.
+  writeAll(ops) {
+    const { fb, db } = this.cloud;
+    for (let i = 0; i < ops.length; i += 450) {
+      const batch = fb.writeBatch(db);
+      for (const op of ops.slice(i, i + 450)) op(batch);
+      this.send(batch.commit());
+    }
+  }
+
+  async importBackup(backup) {
+    const { fb, db } = this.cloud;
+    const { state, added, updated } = mergeBackup(this.state, backup, this.knownFoodIds);
+    const ops = [];
+    for (const log of Object.values(state.logs)) {
+      if (this.state.logs[log.id] !== log) ops.push((b) => b.set(fb.doc(db, "logs", log.id), JSON.parse(JSON.stringify(log))));
+    }
+    for (const foodId of Object.keys(state.queue)) {
+      if (!this.state.queue[foodId]) ops.push((b) => b.set(fb.doc(db, "queue", foodId), { foodId, addedAt: state.queue[foodId].addedAt || Date.now() }));
+    }
+    const profilePatch = {};
+    for (const [k, v] of Object.entries(state.profile)) if (this.state.profile[k] !== v) profilePatch[k] = v;
+    if (Object.keys(profilePatch).length) ops.push((b) => b.set(fb.doc(db, "meta", "profile"), profilePatch, { merge: true }));
+    this.writeAll(ops);
+    return { added, updated };
+  }
+
+  async clearAll() {
+    const { fb, db } = this.cloud;
+    const ops = [
+      ...Object.keys(this.state.logs).map((id) => (b) => b.delete(fb.doc(db, "logs", id))),
+      ...Object.keys(this.state.queue).map((id) => (b) => b.delete(fb.doc(db, "queue", id))),
+      (b) => b.delete(fb.doc(db, "meta", "profile")),
+    ];
+    this.writeAll(ops);
   }
 }
 

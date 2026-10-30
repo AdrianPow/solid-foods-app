@@ -1,8 +1,10 @@
 import { FOODS, FOODS_BY_ID } from "./data/index.js";
 import { ALLERGENS, ALLERGEN_DUE_DAYS, CATEGORIES, CHOKING, DEFAULT_GOAL, OUTCOMES, REACTIONS, STAGES } from "./data/meta.js";
 import { GUIDE } from "./data/guide.js";
+import { ICONS, ICON_VIEWBOX } from "./data/icons.js";
 import * as L from "./logic.js";
-import { describeStoreError, getDeviceName, openStore, setDeviceName } from "./store.js";
+import { CloudStore, LocalStore, describeStoreError, getDeviceName, openStore, readLocalState, setDeviceName } from "./store.js";
+import { cloudConfigured, describeAuthError, loadCloud } from "./cloud.js";
 
 const KNOWN_IDS = new Set(FOODS.map((f) => f.id));
 const CAT_LABEL = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.label]));
@@ -22,6 +24,8 @@ const app = {
   filters: { q: "", status: "all", cat: "all", allergen: "all", flag: "all", sort: "category" },
   openFoodId: null,
   pushedFood: false,
+  cloud: { status: "off" },
+  cloudApi: null,
   stage: null,
 };
 
@@ -74,7 +78,7 @@ function canWrite() {
 }
 
 function loading() {
-  return !app.store || (app.store.mode === "shared" && !app.store.ready);
+  return !app.store || (app.store.mode !== "local" && !app.store.ready);
 }
 
 function ageTag(food) {
@@ -85,6 +89,21 @@ function ageTag(food) {
 
 function isWaiting(food) {
   return !L.isReadyAt(food, babyMonths());
+}
+
+// One hidden sprite holds every icon; tiles reference it with <use>.
+function mountIconSprite() {
+  if (document.getElementById("icon-sprite")) return;
+  const symbols = Object.entries(ICONS)
+    .map(([key, body]) => `<symbol id="ic-${key}" viewBox="${ICON_VIEWBOX}">${body}</symbol>`)
+    .join("");
+  const holder = document.createElement("div");
+  holder.innerHTML = `<svg id="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">${symbols}</svg>`;
+  document.body.prepend(holder.firstChild);
+}
+
+function iconHTML(food, cls = "food-icon") {
+  return `<svg class="${cls}" aria-hidden="true" focusable="false"><use href="#ic-${food.icon}"></use></svg>`;
 }
 
 function whoLogged(log) {
@@ -257,7 +276,7 @@ function tileHTML(food) {
   return `<div class="tile st-${status}" data-cat="${food.cat}">
     <button type="button" class="tile-open" data-open="${food.id}" aria-label="${esc(food.name)}. ${esc(ageTitle)}. ${esc(STATUS_LABEL[status])}.">
       <span class="tile-age${waiting ? " is-wait" : ""}" title="${esc(ageTitle)}">${ageTag(food)}</span>
-      <span class="tile-sym" aria-hidden="true">${esc(food.sym)}</span>
+      ${iconHTML(food, "tile-icon")}
       <span class="tile-name">${esc(food.name)}</span>
       <span class="tile-tags">${tags.join("")}</span>
     </button>
@@ -382,7 +401,7 @@ function renderSheet() {
   const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(`site:solidstarts.com ${food.name} for babies`)}`;
   sheet.innerHTML = `
     <header class="sheet-head">
-      <div class="big-tile" data-cat="${food.cat}" aria-hidden="true">${esc(food.sym)}</div>
+      <div class="big-tile" data-cat="${food.cat}" aria-hidden="true">${iconHTML(food)}</div>
       <div class="sheet-title">
         <p class="eyebrow">${esc(CAT_LABEL[food.cat])}</p>
         <h2 id="sheet-title" tabindex="-1">${esc(food.name)}</h2>
@@ -444,7 +463,7 @@ function openLogDialog(foodId, logId) {
   logDialog.innerHTML = `
     <form class="log-form" id="log-form" novalidate>
       <header class="sheet-head">
-        <div class="big-tile" data-cat="${food.cat}" aria-hidden="true" style="width:52px;height:52px;font-size:1.4rem">${esc(food.sym)}</div>
+        <div class="big-tile big-tile-small" data-cat="${food.cat}" aria-hidden="true">${iconHTML(food)}</div>
         <div class="sheet-title"><p class="eyebrow">${existing ? "Edit try" : "Log a try"}</p><h2 id="log-title" tabindex="-1">${esc(food.name)}</h2></div>
         <button type="button" class="sheet-close" data-action="close-log" aria-label="Close">${ICON.close}</button>
       </header>
@@ -618,7 +637,7 @@ function renderProgress() {
           const who = whoLogged(log);
           const bits = [OUTCOME_LABEL[log.outcome], log.reactions?.length ? "reaction noted" : "", log.served, who && `by ${who}`].filter(Boolean);
           return `<li>
-            <button type="button" class="mini-tile" data-cat="${food.cat}" data-open="${food.id}" aria-label="Open ${esc(food.name)}">${esc(food.sym)}</button>
+            <button type="button" class="mini-tile" data-cat="${food.cat}" data-open="${food.id}" aria-label="Open ${esc(food.name)}">${iconHTML(food)}</button>
             <div class="what"><a href="#food-${food.id}" data-open="${food.id}">${esc(food.name)}</a><div class="sub">${esc(bits.join(" · "))}</div></div>
             <span class="date">${esc(fmtDate(log.date))}</span>
           </li>`;
@@ -653,7 +672,7 @@ function renderProgress() {
       </section>
       <section class="panel">
         <h2>To try next</h2>
-        ${queue.length ? `<div class="queue-list">${queue.map((f) => `<a class="queue-item" href="#food-${f.id}" data-open="${f.id}"><span class="mini-tile" data-cat="${f.cat}" aria-hidden="true">${esc(f.sym)}</span>${esc(f.name)}</a>`).join("")}</div>` : `<p class="muted">Add foods to this list from any food's page, so you both know what's coming up.</p>`}
+        ${queue.length ? `<div class="queue-list">${queue.map((f) => `<a class="queue-item" href="#food-${f.id}" data-open="${f.id}"><span class="mini-tile" data-cat="${f.cat}" aria-hidden="true">${iconHTML(f)}</span>${esc(f.name)}</a>`).join("")}</div>` : `<p class="muted">Add foods to this list from any food's page, so you both know what's coming up.</p>`}
       </section>
       <section class="panel">
         <h2>By category</h2>
@@ -698,6 +717,7 @@ function renderGuide() {
             <li><strong>NHS Start for Life</strong><a href="https://www.nhs.uk/start-for-life/baby/weaning/" target="_blank" rel="noopener">Weaning ↗</a></li>
             <li><strong>US FDA</strong><a href="https://www.fda.gov/food/consumers/advice-about-eating-fish" target="_blank" rel="noopener">Advice about eating fish ↗</a></li>
           </ul>
+          <p class="guide-note">Food icons: Fluent Emoji by Microsoft (MIT License), some recolored.</p>
           <p class="guide-note">This app is not medical advice. Talk to your pediatrician about your baby's readiness, allergy risk and any concerns.</p>
         </section>
       </div>
@@ -717,6 +737,41 @@ function syncHTML() {
       <p class="muted">To add your partner, use the Share menu on this page and invite them by email as an editor.</p>
     </div></div>`;
   }
+  if (store.mode === "cloud") {
+    const local = readLocalState(KNOWN_IDS);
+    const unsynced = Object.keys(local.logs).filter((id) => !app.state.logs[id]).length;
+    return `<div class="sync-state"><span class="sync-dot is-shared"></span><div>
+      <p><strong>Synced between your phones.</strong> Signed in as ${esc(store.email)}. Tries either of you log show up on both phones within seconds.</p>
+      <p class="muted">${store.pendingWrites ? "Some changes are waiting for a connection and will sync automatically." : "It works offline too, and catches up when you're back online."}</p>
+      ${unsynced ? `<p>This phone also has ${plural(unsynced, "try", "tries")} saved from before you signed in.</p>` : ""}
+      <div class="button-row">
+        ${unsynced ? `<button type="button" class="btn btn-small btn-primary" data-action="copy-local">Add them to the shared log</button>` : ""}
+        <button type="button" class="btn btn-small" data-action="sign-out">Sign out</button>
+      </div>
+    </div></div>`;
+  }
+  if (cloudConfigured && !window.claude) {
+    if (app.cloud.status === "loading") return `<div class="sync-state"><span class="sync-dot"></span><p>Connecting to sync…</p></div>`;
+    if (app.cloud.status === "error") {
+      return `<div class="sync-state"><span class="sync-dot"></span><div>
+        <p><strong>Syncing isn't available right now.</strong> ${esc(app.cloud.message)}</p>
+        <p class="muted">Tries are being saved on this phone until it can connect.</p>
+        <div class="button-row"><button type="button" class="btn btn-small" data-action="retry-cloud">Try again</button></div>
+      </div></div>`;
+    }
+    return `<div class="sync-state"><span class="sync-dot"></span><div>
+      <p><strong>Sign in to sync with your partner.</strong> Until you do, tries are saved on this phone only.</p>
+      <form class="form form-inline" id="signin-form" novalidate>
+        <div class="field"><label for="signin-email">Email</label><input class="input" id="signin-email" name="email" type="email" autocomplete="username" required></div>
+        <div class="field"><label for="signin-password">Password</label><input class="input" id="signin-password" name="password" type="password" autocomplete="current-password" required></div>
+        <p class="alert" id="signin-error" role="alert" hidden></p>
+        <div class="button-row">
+          <button type="submit" class="btn btn-primary">Sign in</button>
+          <button type="button" class="btn btn-quiet" data-action="reset-password">Forgot password?</button>
+        </div>
+      </form>
+    </div></div>`;
+  }
   return `<div class="sync-state"><span class="sync-dot"></span><div>
       <p><strong>Saved on this device.</strong> ${store.persisted ? "Your log stays in this browser, even offline." : "This browser is blocking storage (private mode?), so your log will be lost when you close it."}</p>
       <p class="muted">To share with your partner's phone:</p>
@@ -725,12 +780,14 @@ function syncHTML() {
         <li>They open First Bites and tap <strong>Import backup</strong>.</li>
         <li>Imports merge entries, so you can swap backups back and forth without losing anything.</li>
       </ol>
+      <p class="muted">For automatic syncing between phones, see “Syncing between your phones” in the app's README.</p>
     </div></div>`;
 }
 
 function renderSetup() {
   const p = app.state.profile;
   const local = app.store && app.store.mode === "local";
+  const ownDevice = app.store && app.store.mode !== "shared";
   const disabled = canWrite() ? "" : " disabled";
   main.innerHTML = `
     <div class="page-head">
@@ -757,10 +814,10 @@ function renderSetup() {
           <input class="input" id="baby-goal" type="number" min="1" max="1000" inputmode="numeric" data-profile="goal" value="${esc(p.goal || DEFAULT_GOAL)}" style="max-width:10rem"${disabled}>
           <span class="hint">Many families aim for 100 different foods before the first birthday.</span>
         </div>
-        ${local ? `<div class="field">
+        ${ownDevice ? `<div class="field">
           <label for="device-name">Your name on this device</label>
           <input class="input" id="device-name" maxlength="60" value="${esc(getDeviceName())}" placeholder="e.g. Mum, Dad, Alex" autocomplete="off">
-          <span class="hint">Shown next to the tries you log, so you can tell who logged what after sharing backups.</span>
+          <span class="hint">Shown next to the tries you log, so you can tell who logged what.</span>
         </div>` : ""}
       </section>
       <section class="panel">
@@ -785,13 +842,13 @@ function renderSetup() {
           <textarea class="input" id="export-text" readonly></textarea>
         </div>
       </section>
-      ${local ? `<section class="panel">
+      ${ownDevice ? `<section class="panel">
         <h2>Install on your phone</h2>
         <p class="muted">On iPhone, open this page in Safari, tap Share, then <strong>Add to Home Screen</strong>. On Android, open the browser menu and tap <strong>Install app</strong>. It works offline once installed.</p>
       </section>` : ""}
       ${canWrite() ? `<section class="panel">
         <h2>Start over</h2>
-        <p class="muted">Deletes every logged try, the to-try list and your baby's details${local ? " from this device" : " for everyone using this tracker"}. Export a backup first if you might want them back.</p>
+        <p class="muted">Deletes every logged try, the to-try list and your baby's details${local ? " from this device" : " for both of you"}. Export a backup first if you might want them back.</p>
         <div class="button-row"><button type="button" class="btn btn-danger" data-action="clear-all">Delete all data</button></div>
       </section>` : ""}
     </div>`;
@@ -799,7 +856,9 @@ function renderSetup() {
 
 function refreshSetup() {
   const box = $("#sync-box");
-  if (box) box.innerHTML = syncHTML();
+  // Don't wipe the sign-in form while someone is typing in it.
+  const typing = box && box.contains(document.activeElement) && $("#signin-form", box) && app.store.mode === "local";
+  if (box && !typing) box.innerHTML = syncHTML();
   for (const input of document.querySelectorAll("[data-profile]")) {
     if (document.activeElement === input) continue;
     const key = input.dataset.profile;
@@ -1047,6 +1106,18 @@ document.addEventListener("click", (e) => {
     case "clear-all":
       clearAll(t);
       break;
+    case "sign-out":
+      app.cloudApi?.signOut().then(() => toast("Signed out. New tries will be saved on this phone only."));
+      break;
+    case "reset-password":
+      resetPassword();
+      break;
+    case "copy-local":
+      copyLocalToCloud();
+      break;
+    case "retry-cloud":
+      startCloud();
+      break;
   }
 });
 
@@ -1084,6 +1155,9 @@ document.addEventListener("submit", (e) => {
   if (e.target.id === "log-form") {
     e.preventDefault();
     submitLog(e.target);
+  } else if (e.target.id === "signin-form") {
+    e.preventDefault();
+    signIn(e.target);
   }
 });
 
@@ -1110,18 +1184,95 @@ function registerServiceWorker() {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 
-async function boot() {
-  route();
-  const store = await openStore(KNOWN_IDS);
+// Switch the app to a different store (e.g. after signing in to sync).
+function attachStore(store) {
+  if (app.unsubscribe) app.unsubscribe();
+  if (app.store && app.store !== store && app.store.dispose) app.store.dispose();
   app.store = store;
   store.onError = (err) => toast(describeStoreError(err));
-  store.subscribe((state) => {
+  if (store.start && store.mode === "cloud") store.start();
+  app.unsubscribe = store.subscribe((state) => {
     app.state = state;
     app.summaries = L.summarizeAll(state);
     refresh();
     resolveNames();
   });
   if (app.view === "setup") renderSetup();
+}
+
+// Firebase sync for the GitHub Pages version (see js/sync-config.js).
+async function startCloud() {
+  app.cloud = { status: "loading" };
+  if (app.view === "setup") refreshSetup();
+  try {
+    const cloud = await loadCloud();
+    app.cloudApi = cloud;
+    cloud.onUser((user) => {
+      if (user) {
+        if (!(app.store.mode === "cloud" && app.store.user.uid === user.uid)) attachStore(new CloudStore(cloud, user, KNOWN_IDS));
+        app.cloud = { status: "signed-in" };
+      } else {
+        if (app.store.mode === "cloud") attachStore(new LocalStore(KNOWN_IDS));
+        app.cloud = { status: "signed-out" };
+      }
+      if (app.view === "setup") refreshSetup();
+    });
+  } catch (err) {
+    app.cloud = { status: "error", message: navigator.onLine ? "The sync service couldn't be loaded." : "You're offline." };
+    if (app.view === "setup") refreshSetup();
+  }
+}
+
+async function signIn(form) {
+  const email = form.email.value.trim();
+  const password = form.password.value;
+  const error = $("#signin-error");
+  const submit = form.querySelector('[type="submit"]');
+  submit.disabled = true;
+  error.hidden = true;
+  try {
+    await app.cloudApi.signIn(email, password);
+    toast("Signed in. Your log now syncs.");
+  } catch (err) {
+    error.textContent = describeAuthError(err);
+    error.hidden = false;
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+async function resetPassword() {
+  const email = ($("#signin-email") || {}).value?.trim();
+  const error = $("#signin-error");
+  if (!email) {
+    error.textContent = "Enter your email above, then tap Forgot password again.";
+    error.hidden = false;
+    return;
+  }
+  try {
+    await app.cloudApi.resetPassword(email);
+    toast("Check your email for a link to reset your password.");
+  } catch (err) {
+    error.textContent = describeAuthError(err);
+    error.hidden = false;
+  }
+}
+
+async function copyLocalToCloud() {
+  const local = readLocalState(KNOWN_IDS);
+  try {
+    const { added } = await app.store.importBackup(L.makeBackup(local));
+    toast(`Added ${plural(added, "try", "tries")} to the shared log`);
+  } catch (err) {
+    toast(describeStoreError(err));
+  }
+}
+
+async function boot() {
+  mountIconSprite();
+  route();
+  attachStore(await openStore(KNOWN_IDS));
+  if (app.store.mode === "local" && cloudConfigured && !window.claude) startCloud();
   registerServiceWorker();
 }
 

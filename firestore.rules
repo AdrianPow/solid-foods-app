@@ -1,0 +1,18 @@
+rules_version = '2';
+
+// Security rules for the optional First Bites sync (see README.md,
+// "Syncing between your phones"). Paste these into the Firebase console
+// under Firestore Database > Rules, replacing the two example addresses
+// with the emails you and your partner sign in with.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isFamily() {
+      return request.auth != null
+        && request.auth.token.email in ['you@example.com', 'partner@example.com'];
+    }
+
+    match /{document=**} {
+      allow read, write: if isFamily();
+    }
+  }
+}

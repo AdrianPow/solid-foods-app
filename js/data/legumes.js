@@ -4,7 +4,7 @@ const C = "legume";
 
 export default [
   food("lentil", "Lentils", C, {
-    aka: ["dal", "dhal", "red lentils"],
+    aka: ["dal", "dhal", "red lentils", "green lentils", "brown lentils", "puy lentils"],
     iron: true,
     s6: "Well-cooked lentils in a thick dal or stew on a pre-loaded spoon, or mashed into patties.",
     s9: "Soft whole lentils in dishes for scooping and pincer practice.",
@@ -53,7 +53,8 @@ export default [
     ],
   }),
   food("pinto-beans", "Pinto beans", C, {
-    aka: ["refried beans"],
+    ss: "pinto-bean",
+    aka: ["refried beans", "borlotti", "cranberry beans"],
     iron: true,
     choking: "prep",
     s6: "Mashed or refried (no added salt) on toast or tortilla.",
@@ -62,6 +63,7 @@ export default [
     tips: ["Canned refried beans can be salty. Look for low-sodium versions."],
   }),
   food("white-beans", "White beans", C, {
+    ss: "cannellini-beans",
     aka: ["cannellini", "navy beans", "great northern beans", "baked beans"],
     iron: true,
     choking: "prep",
@@ -71,6 +73,7 @@ export default [
     tips: ["Canned baked beans are usually high in sugar and salt. Look for reduced versions."],
   }),
   food("lima-beans", "Lima beans", C, {
+    ss: "lima-bean",
     aka: ["butter beans"],
     iron: true,
     choking: "prep",
@@ -80,6 +83,7 @@ export default [
     tips: ["Large, creamy butter beans are easy to squish."],
   }),
   food("fava-beans", "Fava beans", C, {
+    ss: "fava-bean",
     aka: ["broad beans"],
     choking: "prep",
     s6: "Cooked, peeled and mashed.",
@@ -90,6 +94,7 @@ export default [
     ],
   }),
   food("split-peas", "Split peas", C, {
+    ss: null,
     iron: true,
     s6: "Split pea soup cooked thick, on a pre-loaded spoon.",
     s9: "Thick split pea soup or dal.",
@@ -97,6 +102,7 @@ export default [
     tips: ["Cooks down into a smooth puree on its own."],
   }),
   food("mung-beans", "Mung beans", C, {
+    ss: "mung-bean",
     aka: ["moong dal"],
     iron: true,
     s6: "Moong dal cooked soft and mashed.",
@@ -105,7 +111,7 @@ export default [
     tips: ["Raw bean sprouts carry a food poisoning risk. Cook sprouts thoroughly."],
   }),
   food("edamame", "Edamame", C, {
-    aka: ["soybeans"],
+    aka: ["soybeans", "soybean"],
     allergens: ["soy"],
     iron: true,
     choking: "prep",
@@ -115,6 +121,7 @@ export default [
     tips: ["Edamame are young soybeans, a common allergen."],
   }),
   food("tofu", "Tofu", C, {
+    aka: ["silken tofu", "bean curd"],
     allergens: ["soy"],
     iron: true,
     s6: "Firm tofu cut into strips (lightly pan-fried for grip), or silken tofu mashed or blended.",
@@ -129,5 +136,41 @@ export default [
     s9: "Crumbled or bite-size cooked pieces.",
     s12: "Cubes or crumbles in meals.",
     tips: ["Steam it first to soften the texture and mellow the flavor."],
+  }),
+  food("adzuki-bean", "Adzuki beans", C, {
+    aka: ["azuki beans", "red beans", "red bean paste", "anko"],
+    iron: true,
+    choking: "prep",
+    s6: "Cooked until very soft and mashed, or mixed into rice or congee.",
+    s9: "Soft beans lightly flattened.",
+    s12: "Whole soft beans.",
+    tips: ["Sweet red bean paste is made with a lot of sugar. Use plain cooked beans for babies."],
+  }),
+  food("black-eyed-peas", "Black-eyed peas", C, {
+    aka: ["cowpeas", "lobia"],
+    ss: "black-eye-peas",
+    iron: true,
+    choking: "prep",
+    s6: "Cooked until soft and mashed, or blended into a spread.",
+    s9: "Soft peas lightly flattened.",
+    s12: "Whole soft peas in rice and stews.",
+    tips: ["Rinse canned peas to cut the salt."],
+  }),
+  food("urad-dal", "Urad dal", C, {
+    aka: ["black gram", "black lentils", "dal makhani"],
+    ss: "black-gram-urad-bean",
+    iron: true,
+    s6: "Well-cooked dal on a pre-loaded spoon, or soft idli and dosa in strips.",
+    s9: "Dal for scooping, or idli and dosa pieces.",
+    s12: "Dal, idli and dosa.",
+    tips: ["Idli and dosa batters are made from urad dal and rice."],
+  }),
+  food("natto", "Natto", C, {
+    allergens: ["soy"],
+    iron: true,
+    s6: "A small amount of natto mixed into soft rice.",
+    s9: "Natto with rice, for hand-scooping.",
+    s12: "Natto with rice. Go easy on the salty sauce packet.",
+    tips: ["Fermented soybeans with a sticky, stringy texture and a strong smell. Some babies love it."],
   }),
 ];
