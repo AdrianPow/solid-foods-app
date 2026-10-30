@@ -197,11 +197,22 @@ function matchesFilters(food, { skipStatus = false } = {}) {
   return L.matchesQuery(food, f.q);
 }
 
+function readyFilterLabel() {
+  const months = babyMonths();
+  return months != null && months >= 6 ? `Ready at ${L.formatAge(months)}` : "Ready from 6 months";
+}
+
+// Ask for a birth date only once we know there isn't one: synced details can
+// arrive a moment after the page first draws.
+function babyNoticeHTML() {
+  const settling = loading() || app.cloud.status === "loading";
+  if (settling || app.state.profile.birthDate) return "";
+  return `<div class="notice"><p>Add your baby's birth date to see the right serving stage for their age.</p><a class="btn btn-small" href="#setup">Add baby details</a></div>`;
+}
+
 function renderFoods() {
   const f = app.filters;
-  const months = babyMonths();
-  const readyLabel = months != null && months >= 6 ? `Ready at ${L.formatAge(months)}` : "Ready from 6 months";
-  const needsBaby = !app.state.profile.birthDate;
+  const readyLabel = readyFilterLabel();
   main.innerHTML = `
     <div class="page-head">
       <div>
@@ -209,7 +220,7 @@ function renderFoods() {
         <p class="muted">${FOODS.length} foods with age-by-age serving tips. Tap a tile for details, or its circle to log a try.</p>
       </div>
     </div>
-    ${needsBaby ? `<div class="notice"><p>Add your baby's birth date to see the right serving stage for their age.</p><a class="btn btn-small" href="#setup">Add baby details</a></div>` : ""}
+    <div id="baby-notice">${babyNoticeHTML()}</div>
     <div id="install-notice">${installNoticeHTML()}</div>
     <div class="filters">
       <label class="search">
@@ -233,7 +244,7 @@ function renderFoods() {
         <label class="visually-hidden" for="filter-flag">Show</label>
         <select id="filter-flag" class="select">
           <option value="all">All ages</option>
-          <option value="ready"${f.flag === "ready" ? " selected" : ""}>${esc(readyLabel)}</option>
+          <option value="ready" id="ready-option"${f.flag === "ready" ? " selected" : ""}>${esc(readyLabel)}</option>
           <option value="wait"${f.flag === "wait" ? " selected" : ""}>Not yet / avoid</option>
           <option value="iron"${f.flag === "iron" ? " selected" : ""}>Iron-rich</option>
           <option value="hazard"${f.flag === "hazard" ? " selected" : ""}>Common choking hazards</option>
@@ -1019,8 +1030,13 @@ function route() {
 
 function refresh() {
   renderChrome();
-  if (app.view === "foods") renderFoodResults();
-  else if (app.view === "progress") renderProgress();
+  if (app.view === "foods") {
+    const notice = $("#baby-notice");
+    if (notice) notice.innerHTML = babyNoticeHTML();
+    const ready = $("#ready-option");
+    if (ready) ready.textContent = readyFilterLabel();
+    renderFoodResults();
+  } else if (app.view === "progress") renderProgress();
   else if (app.view === "setup") refreshSetup();
   if (app.openFoodId && sheet.open) {
     const panel = $("#sheet-log");
@@ -1309,11 +1325,11 @@ async function startCloud() {
         if (app.store.mode === "cloud") attachStore(new LocalStore(KNOWN_IDS));
         app.cloud = { status: "signed-out" };
       }
-      if (app.view === "setup") refreshSetup();
+      refresh();
     });
   } catch (err) {
     app.cloud = { status: "error", message: navigator.onLine ? "The sync service couldn't be loaded." : "You're offline." };
-    if (app.view === "setup") refreshSetup();
+    refresh();
   }
 }
 
@@ -1365,15 +1381,18 @@ async function copyLocalToCloud() {
 async function boot() {
   mountIconSprite();
   route();
-  attachStore(await openStore(KNOWN_IDS));
-  if (app.store.mode === "local" && !window.claude) {
+  const store = await openStore(KNOWN_IDS);
+  // Read the sync settings before showing this phone's log, so the page
+  // knows synced details are on their way and doesn't flash prompts.
+  if (store.mode === "local" && !window.claude) {
     const { config, error } = await readSyncConfig();
     app.syncConfig = config;
     app.syncConfigError = error || "";
     if (error) console.error(error);
-    if (config) startCloud();
-    else if (app.view === "setup") refreshSetup();
+    if (config) app.cloud = { status: "loading" };
   }
+  attachStore(store);
+  if (app.syncConfig) startCloud();
   registerServiceWorker();
 }
 
