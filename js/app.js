@@ -1189,6 +1189,15 @@ window.addEventListener("hashchange", route);
 function registerServiceWorker() {
   if (window.claude || !("serviceWorker" in navigator)) return;
   if (location.protocol !== "https:" && location.hostname !== "localhost") return;
+  // When a newer version of the app takes over, reload once so this page
+  // isn't left running the old files.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloading) return;
+    reloading = true;
+    location.reload();
+  });
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
 

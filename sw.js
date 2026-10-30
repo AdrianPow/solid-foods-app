@@ -1,6 +1,11 @@
-// Offline support for the installed app: serve the app shell from cache,
-// refresh it in the background when online.
-const CACHE = "first-bites-v3";
+// Offline support for the installed app.
+//
+// The app's own files are fetched from the network first, so a newly
+// published version shows up on the next load; the cached copy is only used
+// when offline. Google Fonts come from the cache once downloaded. Everything
+// else (Firebase sync traffic, links out) is left alone: caching those would
+// serve stale data.
+const CACHE = "first-bites-v4";
 const SHELL = [
   "./",
   "index.html",
@@ -33,8 +38,17 @@ const SHELL = [
   "js/data/drinks.js",
 ];
 
+const FONT_HOSTS = new Set(["fonts.googleapis.com", "fonts.gstatic.com"]);
+
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: "reload" skips the browser's HTTP cache, so the precache holds
+  // what is on the server now, not a copy from a few minutes ago.
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((cache) => cache.addAll(SHELL.map((url) => new Request(url, { cache: "reload" }))))
+      .then(() => self.skipWaiting()),
+  );
 });
 
 self.addEventListener("activate", (event) => {
@@ -46,21 +60,33 @@ self.addEventListener("activate", (event) => {
   );
 });
 
-// Stale-while-revalidate for same-origin GETs; fonts and other hosts go to
-// the network and are cached opportunistically.
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
-  event.respondWith(
-    caches.open(CACHE).then(async (cache) => {
-      const cached = await cache.match(request, { ignoreSearch: true });
-      const network = fetch(request)
-        .then((response) => {
-          if (response.ok || response.type === "opaque") cache.put(request, response.clone());
-          return response;
-        })
-        .catch(() => cached);
-      return cached || network;
-    }),
-  );
+  const url = new URL(request.url);
+  if (url.origin === self.location.origin) event.respondWith(networkFirst(request));
+  else if (FONT_HOSTS.has(url.hostname)) event.respondWith(cacheFirst(request));
 });
+
+async function networkFirst(request) {
+  const cache = await caches.open(CACHE);
+  try {
+    // "no-cache" asks the server whether the file changed (cheap when it hasn't).
+    const response = await fetch(request, { cache: "no-cache" });
+    if (response.ok) cache.put(request, response.clone());
+    return response;
+  } catch (err) {
+    const cached = (await cache.match(request)) || (request.mode === "navigate" && (await cache.match("./")));
+    if (cached) return cached;
+    throw err;
+  }
+}
+
+async function cacheFirst(request) {
+  const cache = await caches.open(CACHE);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+  const response = await fetch(request);
+  if (response.ok || response.type === "opaque") cache.put(request, response.clone());
+  return response;
+}
