@@ -51,6 +51,15 @@ export function formatAge(months) {
   return rest ? `${years} yr ${rest} mo` : `${years} yr`;
 }
 
+// The same age for use in a sentence: "4 months", "1 year 3 months".
+export function formatAgeLong(months) {
+  if (months == null) return "";
+  const unit = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  if (months < 24) return unit(months, "month");
+  const rest = months % 12;
+  return rest ? `${unit(Math.floor(months / 12), "year")} ${unit(rest, "month")}` : unit(months / 12, "year");
+}
+
 // The serving stage to show by default for a baby of this age.
 export function stageForAge(months) {
   if (months == null) return STAGES[0].id;
@@ -85,7 +94,9 @@ export function logsForFood(state, foodId) {
     .sort(compareLogs);
 }
 
-// status: "new" | "liked" | "learning" | "reaction"
+// status: "new" | "liked" | "learning" | "reaction". The latest try decides
+// it, so a food offered again without symptoms moves on from "reaction"; the
+// earlier reaction stays in reactionCount and lastReactionDate.
 export function summarizeLogs(logs) {
   if (!logs.length) return { count: 0, status: "new" };
   const sorted = [...logs].sort(compareLogs);
@@ -93,7 +104,7 @@ export function summarizeLogs(logs) {
   const reactions = sorted.filter((l) => (l.reactions || []).length > 0);
   const lastTone = OUTCOME_TONE[last.outcome];
   let status = lastTone === "good" ? "liked" : "learning";
-  if (reactions.length) status = "reaction";
+  if ((last.reactions || []).length) status = "reaction";
   return {
     count: sorted.length,
     status,
@@ -101,6 +112,7 @@ export function summarizeLogs(logs) {
     lastDate: last.date,
     lastOutcome: last.outcome,
     reactionCount: reactions.length,
+    lastReactionDate: reactions.length ? reactions[reactions.length - 1].date : null,
     lovedCount: sorted.filter((l) => l.outcome === "loved").length,
   };
 }
@@ -124,7 +136,7 @@ export function allergenProgress(foods, summaries, todayIso = todayISO()) {
       const d = summaries.get(f.id).lastDate;
       return !max || d > max ? d : max;
     }, null);
-    const reaction = tried.some((f) => summaries.get(f.id).reactionCount > 0);
+    const reaction = tried.some((f) => summaries.get(f.id).status === "reaction");
     const daysSince = lastDate ? daysBetween(lastDate, todayIso) : null;
     let state = "new";
     if (reaction) state = "reaction";

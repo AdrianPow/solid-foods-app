@@ -29,6 +29,19 @@ export const ALLERGENS = [
   { id: "shellfish", label: "Shellfish" },
 ];
 
+// Easy first ways to offer each allergen, shown until it has been tried.
+export const ALLERGEN_STARTERS = {
+  milk: "plain whole-milk yogurt, ricotta or cottage cheese",
+  egg: "well-cooked omelet strips or mashed hard-boiled egg",
+  peanut: "smooth peanut butter thinned with water or stirred into yogurt",
+  treenut: "smooth almond or cashew butter, thinned, or finely ground nuts in oatmeal",
+  sesame: "tahini stirred into yogurt or oatmeal, or hummus",
+  soy: "soft tofu strips or mashed edamame",
+  wheat: "soft-cooked pasta or wheat cereal biscuits softened into porridge",
+  fish: "flaked salmon or cod, or mashed sardines, checked for bones",
+  shellfish: "finely chopped cooked shrimp or flaked crab",
+};
+
 // Serving stages. `from` is inclusive, in months of age.
 export const STAGES = [
   { id: "6", label: "6–8 months", short: "6–8 mo", from: 6 },

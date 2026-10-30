@@ -82,6 +82,13 @@ export function readLocalState(knownFoodIds) {
   return loadLocalState(knownFoodIds);
 }
 
+// Drop tries from this device's own log, once they've moved to the shared log.
+export function removeLocalLogs(ids, knownFoodIds) {
+  const state = loadLocalState(knownFoodIds);
+  for (const id of ids) delete state.logs[id];
+  return writeJSON(STATE_KEY, state);
+}
+
 export class LocalStore extends Emitter {
   constructor(knownFoodIds) {
     super();
@@ -184,6 +191,7 @@ export class SharedStore extends Emitter {
     this.knownFoodIds = knownFoodIds;
     this.state = emptyState();
     this.loaded = { logs: false, queue: false, profile: false };
+    this.error = null;
     this.canWrite = true;
     this.onError = () => {};
     this.profileWrite = Promise.resolve();
@@ -199,7 +207,12 @@ export class SharedStore extends Emitter {
       if (can === false) this.canWrite = false;
       this.viewer = await this.user.me();
     }
-    const fail = (err) => this.onError(err);
+    // A listener stops for good when it fails. Keep the error so the page
+    // can say so, rather than show a log that has stopped updating.
+    const fail = (err) => {
+      this.error = err;
+      this.emit();
+    };
     this.db.collection("logs").onSnapshot((snap) => {
       const logs = {};
       for (const d of snap.docs) {
@@ -296,6 +309,7 @@ export class CloudStore extends Emitter {
     this.knownFoodIds = knownFoodIds;
     this.state = emptyState();
     this.loaded = { logs: false, queue: false, profile: false };
+    this.error = null;
     this.pendingWrites = false;
     this.onError = () => {};
     this.unsubs = [];
@@ -311,16 +325,27 @@ export class CloudStore extends Emitter {
 
   start() {
     const { fb, db } = this.cloud;
-    const fail = (err) => this.onError(err);
+    // A listener stops for good when it fails (e.g. the rules turn this
+    // account away). Keep the error so the page can say so and offer a retry.
+    const fail = (err) => {
+      this.error = err;
+      this.emit();
+    };
     this.unsubs.push(
       fb.onSnapshot(fb.collection(db, "logs"), { includeMetadataChanges: true }, (snap) => {
+        this.pendingWrites = snap.metadata.hasPendingWrites;
+        // When a write reaches the server only the metadata changes: pass on
+        // the same state, so the page updates the sync note but not the list.
+        if (this.loaded.logs && !snap.docChanges().length) {
+          this.emit();
+          return;
+        }
         const logs = {};
         for (const d of snap.docs) {
           const log = cleanLog({ ...d.data(), id: d.id }, this.knownFoodIds);
           if (log) logs[log.id] = log;
         }
         this.loaded.logs = true;
-        this.pendingWrites = snap.metadata.hasPendingWrites;
         this.state = { ...this.state, logs };
         this.emit();
       }, fail),
@@ -344,6 +369,13 @@ export class CloudStore extends Emitter {
   dispose() {
     for (const unsub of this.unsubs) unsub();
     this.unsubs = [];
+  }
+
+  restart() {
+    this.dispose();
+    this.error = null;
+    this.loaded = { logs: false, queue: false, profile: false };
+    this.start();
   }
 
   // Fire-and-forget: the offline cache applies the write right away.

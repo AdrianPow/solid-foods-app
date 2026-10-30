@@ -1,9 +1,9 @@
 import { FOODS, FOODS_BY_ID } from "./data/index.js";
-import { ALLERGENS, ALLERGEN_DUE_DAYS, CATEGORIES, CHOKING, DEFAULT_GOAL, OUTCOMES, REACTIONS, STAGES } from "./data/meta.js";
+import { ALLERGENS, ALLERGEN_DUE_DAYS, ALLERGEN_STARTERS, CATEGORIES, CHOKING, DEFAULT_GOAL, OUTCOMES, REACTIONS, STAGES } from "./data/meta.js";
 import { GUIDE } from "./data/guide.js";
 import { ICONS, ICON_VIEWBOX } from "./data/icons.js";
 import * as L from "./logic.js";
-import { CloudStore, LocalStore, describeStoreError, getDeviceName, openStore, readLocalState, setDeviceName } from "./store.js";
+import { CloudStore, LocalStore, describeStoreError, getDeviceName, openStore, readLocalState, removeLocalLogs, setDeviceName } from "./store.js";
 import { describeAuthError, loadCloud, readSyncConfig } from "./cloud.js";
 
 const KNOWN_IDS = new Set(FOODS.map((f) => f.id));
@@ -80,7 +80,27 @@ function canWrite() {
 }
 
 function loading() {
-  return !app.store || (app.store.mode !== "local" && !app.store.ready);
+  return !app.store || (app.store.mode !== "local" && !app.store.ready && !app.store.error);
+}
+
+// Why the shared log couldn't be read, or "" if it's fine.
+function loadError() {
+  const err = app.store && app.store.error;
+  if (!err) return "";
+  if (["permission-denied", "unauthenticated", "revoked", "not_granted"].includes(err.code)) return describeStoreError(err);
+  return "Check your connection, then try again.";
+}
+
+// Sync is set up for this app (or meant to be), but this phone is using its
+// own log.
+function phoneOnly() {
+  return !!(app.syncConfig || app.syncConfigError) && !!app.store && app.store.mode === "local";
+}
+
+// Tries saved on this phone while signed out, not yet in the shared log.
+function unsyncedLocalIds() {
+  if (!app.store || app.store.mode !== "cloud" || !app.store.ready) return [];
+  return Object.keys(readLocalState(KNOWN_IDS).logs).filter((id) => !app.state.logs[id]);
 }
 
 function ageTag(food) {
@@ -113,13 +133,23 @@ function whoLogged(log) {
   return log.byName || "";
 }
 
+// Shown as a popover where supported, so it sits above an open food page or
+// form instead of behind it.
 let toastTimer;
 function toast(message) {
   const el = $("#toast");
+  const popover = typeof el.showPopover === "function";
   el.textContent = message;
   el.hidden = false;
+  if (popover) {
+    if (el.matches(":popover-open")) el.hidePopover();
+    el.showPopover();
+  }
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.hidden = true), 3200);
+  toastTimer = setTimeout(() => {
+    if (popover && el.matches(":popover-open")) el.hidePopover();
+    el.hidden = true;
+  }, 3200);
 }
 
 const ICON = {
@@ -202,12 +232,29 @@ function readyFilterLabel() {
   return months != null && months >= 6 ? `Ready at ${L.formatAge(months)}` : "Ready from 6 months";
 }
 
-// Ask for a birth date only once we know there isn't one: synced details can
-// arrive a moment after the page first draws.
-function babyNoticeHTML() {
+// Problems with the log come first. Ask for a birth date only once we know
+// there isn't one: synced details can arrive a moment after the page draws.
+function statusNoticesHTML() {
+  const notices = [];
+  const error = loadError();
+  if (error) {
+    notices.push(`<div class="notice notice-bad" role="alert"><p><strong>Your shared log didn't load.</strong> ${esc(error)}</p><button type="button" class="btn btn-small" data-action="retry-store">Try again</button></div>`);
+  } else if (phoneOnly() && app.syncConfigError) {
+    notices.push(`<div class="notice notice-bad"><p><strong>Syncing is off.</strong> The sync settings have a problem, so tries are saved on this phone only.</p><a class="btn btn-small" href="#setup">Details</a></div>`);
+  } else if (phoneOnly() && app.cloud.status === "error") {
+    notices.push(`<div class="notice notice-bad"><p><strong>Sync isn't connected.</strong> ${esc(app.cloud.message)} Tries are saved on this phone until it reconnects.</p><button type="button" class="btn btn-small" data-action="retry-cloud">Try again</button></div>`);
+  } else if (phoneOnly() && app.cloud.status === "signed-out") {
+    notices.push(`<div class="notice"><p><strong>You're signed out.</strong> Sign in to see your shared log. Until then, tries are saved on this phone only.</p><a class="btn btn-small btn-primary" href="#setup">Sign in</a></div>`);
+  }
+  const unsynced = unsyncedLocalIds().length;
+  if (unsynced) {
+    notices.push(`<div class="notice"><p>This phone has ${plural(unsynced, "try", "tries")} logged while you were signed out.</p><button type="button" class="btn btn-small btn-primary" data-action="copy-local">Move to shared log</button></div>`);
+  }
   const settling = loading() || app.cloud.status === "loading";
-  if (settling || app.state.profile.birthDate) return "";
-  return `<div class="notice"><p>Add your baby's birth date to see the right serving stage for their age.</p><a class="btn btn-small" href="#setup">Add baby details</a></div>`;
+  if (!notices.length && !settling && !phoneOnly() && !app.state.profile.birthDate) {
+    notices.push(`<div class="notice"><p>Add your baby's birth date to see the right serving stage for their age.</p><a class="btn btn-small" href="#setup">Add baby details</a></div>`);
+  }
+  return notices.join("");
 }
 
 function renderFoods() {
@@ -220,7 +267,7 @@ function renderFoods() {
         <p class="muted">${FOODS.length} foods with age-by-age serving tips. Tap a tile for details, or its circle to log a try.</p>
       </div>
     </div>
-    <div id="baby-notice">${babyNoticeHTML()}</div>
+    <div id="status-notices">${statusNoticesHTML()}</div>
     <div id="install-notice">${installNoticeHTML()}</div>
     <div class="filters">
       <label class="search">
@@ -357,15 +404,22 @@ function logPanelHTML(food) {
   const logs = L.logsForFood(app.state, food.id).reverse();
   const s = app.summaries.get(food.id);
   const queued = !!app.state.queue[food.id];
+  const pastReaction = s && s.status !== "reaction" && s.lastReactionDate;
   const summary = s
-    ? `<span class="status-pill st-${s.status}">${esc(STATUS_LABEL[s.status])}</span> Tried ${plural(s.count, "time")}, last on ${esc(fmtDate(s.lastDate))}`
+    ? `<span class="status-pill st-${s.status}">${esc(STATUS_LABEL[s.status])}</span> Tried ${plural(s.count, "time")}, last on ${esc(fmtDate(s.lastDate))}${pastReaction ? `<span class="reaction-note">Reaction noted on ${esc(fmtDate(s.lastReactionDate))}</span>` : ""}`
     : loading()
       ? "Loading…"
-      : `<span class="status-pill">Not tried yet</span>`;
+      : loadError()
+        ? "Your log didn't load."
+        : `<span class="status-pill">Not tried yet</span>`;
+  // Foods to avoid don't belong on a to-try list (unless already there).
+  const queueButton = food.age != null || queued
+    ? `<button type="button" class="btn" data-action="queue" data-food="${food.id}" aria-pressed="${queued}">${queued ? "On to-try list" : "Add to to-try list"}</button>`
+    : "";
   const actions = canWrite()
     ? `<div class="log-actions">
         <button type="button" class="btn btn-primary" data-action="log" data-food="${food.id}">${ICON.plus}${s ? "Log another try" : "Log a try"}</button>
-        <button type="button" class="btn" data-action="queue" data-food="${food.id}" aria-pressed="${queued}">${queued ? "On to-try list" : "Add to to-try list"}</button>
+        ${queueButton}
       </div>`
     : "";
   const history = logs.length
@@ -430,8 +484,7 @@ function renderSheet() {
       ${serveHTML(food)}
       ${food.tips.length ? `<section><h3>Good to know</h3><ul class="tips">${food.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></section>` : ""}
       <div class="source-links">
-        ${ssUrl ? `<a href="${ssUrl}" target="_blank" rel="noopener">Full guide on Solid Starts ↗</a>` : ""}
-        <a href="${searchUrl}" target="_blank" rel="noopener">Search Solid Starts for ${esc(food.name.toLowerCase())} ↗</a>
+        ${ssUrl ? `<a href="${ssUrl}" target="_blank" rel="noopener">Full guide on Solid Starts ↗</a>` : `<a href="${searchUrl}" target="_blank" rel="noopener">Search Solid Starts for ${esc(food.name.toLowerCase())} ↗</a>`}
       </div>
       <p class="disclaimer">General guidance only. Every baby is different; check with your pediatrician, especially about allergies.</p>
     </div>`;
@@ -467,13 +520,43 @@ function closeFood() {
 
 // ---------- log dialog ----------
 
+// A heads-up when logging a food that isn't recommended yet at this age.
+function logWarningHTML(food) {
+  if (food.age != null && !isWaiting(food)) return "";
+  const reason = food.wait ? ` ${esc(food.wait)}` : "";
+  if (food.age == null) return `<div class="wait-box"><strong>${esc(food.name)} is best avoided for young children.</strong>${reason}</div>`;
+  const months = babyMonths();
+  const age = months != null ? ` ${esc(babyName() || "Your baby")} is ${esc(L.formatAgeLong(months))}.` : "";
+  return `<div class="wait-box"><strong>${esc(food.name)} isn't recommended until ${esc(L.formatAgeRule(food).replace("From ", ""))}.</strong>${age}${reason}</div>`;
+}
+
+// What the form holds now, to tell whether closing it would lose anything.
+function logFormSnapshot() {
+  const form = $("#log-form", logDialog);
+  if (!form) return "";
+  return JSON.stringify([...new FormData(form).entries(), $("#log-has-reaction", form).checked]);
+}
+
+function setLogDiscardBar(show) {
+  $("#log-discard", logDialog).hidden = !show;
+  $("#log-actions", logDialog).hidden = show;
+  if (show) $("#log-error", logDialog).hidden = true;
+  $(show ? '[data-action="keep-editing"]' : '[type="submit"]', logDialog).focus();
+}
+
+// Close the form, but ask first if that would throw away what was entered.
+function requestCloseLog() {
+  if (!logDialog.open) return;
+  if (logFormSnapshot() === logDialog.dataset.initial) logDialog.close();
+  else setLogDiscardBar(true);
+}
+
 function openLogDialog(foodId, logId) {
   if (!canWrite()) return;
   const food = FOODS_BY_ID.get(foodId);
   const existing = logId ? app.state.logs[logId] : null;
   const log = existing || { date: L.todayISO(), outcome: "", reactions: [], served: "", notes: "" };
   const hasReaction = (log.reactions || []).length > 0;
-  const stageText = food.serve[L.stageForAge(babyMonths())];
   logDialog.innerHTML = `
     <form class="log-form" id="log-form" novalidate>
       <header class="sheet-head">
@@ -482,6 +565,8 @@ function openLogDialog(foodId, logId) {
         <button type="button" class="sheet-close" data-action="close-log" aria-label="Close">${ICON.close}</button>
       </header>
       <div class="form">
+        ${existing ? "" : logWarningHTML(food)}
+        ${phoneOnly() && app.cloud.status !== "loading" ? `<p class="form-note">${app.cloud.status === "signed-out" ? "You're signed out" : "Sync isn't connected"}, so this try will be saved on this phone only.</p>` : ""}
         <div class="field">
           <label for="log-date">Date</label>
           <input class="input" type="date" id="log-date" name="date" required max="${L.todayISO()}" value="${esc(log.date)}">
@@ -494,7 +579,7 @@ function openLogDialog(foodId, logId) {
         </fieldset>
         <div class="field">
           <label for="log-served">How was it served? <span class="muted">(optional)</span></label>
-          <input class="input" id="log-served" name="served" maxlength="300" value="${esc(log.served)}" placeholder="${esc(stageText ? "e.g. " + stageText.split(/[.,]/)[0].toLowerCase() : "e.g. mashed on toast")}">
+          <input class="input" id="log-served" name="served" maxlength="300" value="${esc(log.served)}" placeholder="e.g. steamed spears, mashed, on toast">
         </div>
         <fieldset class="field">
           <legend>Any signs of a reaction?</legend>
@@ -508,34 +593,50 @@ function openLogDialog(foodId, logId) {
           <label for="log-notes">Notes <span class="muted">(optional)</span></label>
           <textarea class="input" id="log-notes" name="notes" maxlength="2000" placeholder="Faces, gagging, how much they ate, what to try next time…">${esc(log.notes)}</textarea>
         </div>
+      </div>
+      <footer class="form-foot">
         <p class="alert" id="log-error" role="alert" hidden></p>
-        <div class="form-actions">
+        <div class="form-actions" id="log-actions">
           ${existing ? `<button type="button" class="btn btn-danger" data-action="delete-log" data-log="${esc(existing.id)}">Delete</button><span class="spacer"></span>` : ""}
           <button type="button" class="btn btn-quiet" data-action="close-log">Cancel</button>
           <button type="submit" class="btn btn-primary">${existing ? "Save changes" : "Save try"}</button>
         </div>
-      </div>
+        <div class="discard-bar" id="log-discard" hidden>
+          <p><strong>Discard ${existing ? "your changes" : "this try"}?</strong> What you've entered won't be saved.</p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-quiet" data-action="keep-editing">Keep editing</button>
+            <button type="button" class="btn btn-danger" data-action="discard-log">Discard</button>
+          </div>
+        </div>
+      </footer>
     </form>`;
   logDialog.dataset.food = foodId;
   logDialog.dataset.log = existing ? existing.id : "";
+  logDialog.dataset.initial = logFormSnapshot();
   logDialog.showModal();
   $("#log-title", logDialog).focus();
 }
 
-function showLogError(message) {
+// Show the error in the pinned footer and bring the field to fix into view.
+function showLogError(message, field) {
   const el = $("#log-error", logDialog);
   if (!el) return toast(message);
   el.textContent = message;
   el.hidden = false;
+  if (field) {
+    field.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    field.focus({ preventScroll: true });
+  }
 }
 
 async function submitLog(form) {
   const data = new FormData(form);
   const outcome = data.get("outcome");
   const date = data.get("date");
-  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return showLogError("Pick the date of this try.");
-  if (date > L.todayISO()) return showLogError("That date is in the future.");
-  if (!outcome) return showLogError("Choose how it went.");
+  const dateInput = $("#log-date", form);
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return showLogError("Pick the date of this try.", dateInput);
+  if (date > L.todayISO()) return showLogError("That date is in the future.", dateInput);
+  if (!outcome) return showLogError("Choose how it went.", $('[name="outcome"]', form));
   const hasReaction = $("#log-has-reaction", form).checked;
   let reactions = hasReaction ? data.getAll("reactions") : [];
   if (hasReaction && !reactions.length) reactions = ["other"];
@@ -633,8 +734,7 @@ function renderProgress() {
       const stateLabel = { new: "Not yet", ok: "In the diet", due: "Offer again", reaction: "Reaction" }[a.state];
       let sub;
       if (a.state === "new") {
-        const ideas = a.foods.filter((f) => f.age != null && f.age <= 6).slice(0, 3).map((f) => f.name);
-        sub = ideas.length ? `Ideas: ${ideas.join(", ")}` : "";
+        sub = `Try: ${ALLERGEN_STARTERS[a.id]}`;
       } else {
         sub = `Last offered ${relDays(a.daysSince)} · ${a.tried.map((f) => f.name).join(", ")}`;
       }
@@ -663,19 +763,20 @@ function renderProgress() {
     <div class="page-head">
       <div>
         <h1>${name ? `${esc(name)}'s progress` : "Progress"}</h1>
-        <p class="muted">${months != null ? `${esc(name || "Baby")} is ${esc(L.formatAge(months))} old. ` : ""}${loading() ? "Loading your tracker…" : `${plural(totalTries, "try", "tries")} logged so far.`}</p>
+        <p class="muted">${months != null ? `${esc(name || "Baby")} is ${esc(L.formatAgeLong(months))} old. ` : ""}${loading() ? "Loading your tracker…" : loadError() ? "" : `${plural(totalTries, "try", "tries")} logged so far.`}</p>
       </div>
     </div>
+    ${statusNoticesHTML()}
     <div class="dash">
       <section class="panel">
         <div class="panel-head"><h2>Foods tried</h2><a href="#setup" class="muted" style="font-size:var(--step--1)">Goal: ${target}</a></div>
         <div class="hero-count"><span class="big">${tried}</span><span class="muted">of ${target} foods${pct >= 100 ? " · goal reached!" : ""}</span></div>
         <div class="meter" role="img" aria-label="${tried} of ${target} foods tried"><span style="width:${pct}%"></span></div>
-        ${beforeOne != null && months != null && months < 15 ? `<p class="muted"><span class="num">${beforeOne}</span> first tried before the first birthday.</p>` : ""}
+        ${beforeOne != null && months != null && months >= 12 && months < 24 ? `<p class="muted"><span class="num">${beforeOne}</span> first tried before the first birthday.</p>` : ""}
         <div class="stat-row">
           <div class="stat"><b>${liked}</b><span>Liked</span></div>
           <div class="stat"><b>${learning}</b><span>Still learning</span></div>
-          <div class="stat"><b>${reactions}</b><span>Reactions</span></div>
+          <div class="stat"><b>${reactions}</b><span>${reactions === 1 ? "Reaction" : "Reactions"}</span></div>
           <div class="stat"><b>${introduced}/9</b><span>Allergens</span></div>
         </div>
       </section>
@@ -752,14 +853,23 @@ function syncHTML() {
     </div></div>`;
   }
   if (store.mode === "cloud") {
-    const local = readLocalState(KNOWN_IDS);
-    const unsynced = Object.keys(local.logs).filter((id) => !app.state.logs[id]).length;
+    const unsynced = unsyncedLocalIds().length;
+    const error = loadError();
+    if (error) {
+      return `<div class="sync-state"><span class="sync-dot"></span><div>
+        <p><strong>Your shared log didn't load.</strong> ${esc(error)} Signed in as ${esc(store.email)}.</p>
+        <div class="button-row">
+          <button type="button" class="btn btn-small btn-primary" data-action="retry-store">Try again</button>
+          <button type="button" class="btn btn-small" data-action="sign-out">Sign out</button>
+        </div>
+      </div></div>`;
+    }
     return `<div class="sync-state"><span class="sync-dot is-shared"></span><div>
       <p><strong>Synced between your phones.</strong> Signed in as ${esc(store.email)}. Tries either of you log show up on both phones within seconds.</p>
       <p class="muted">${store.pendingWrites ? "Some changes are waiting for a connection and will sync automatically." : "It works offline too, and catches up when you're back online."}</p>
-      ${unsynced ? `<p>This phone also has ${plural(unsynced, "try", "tries")} saved from before you signed in.</p>` : ""}
+      ${unsynced ? `<p>This phone also has ${plural(unsynced, "try", "tries")} logged while you were signed out.</p>` : ""}
       <div class="button-row">
-        ${unsynced ? `<button type="button" class="btn btn-small btn-primary" data-action="copy-local">Add them to the shared log</button>` : ""}
+        ${unsynced ? `<button type="button" class="btn btn-small btn-primary" data-action="copy-local">Move them to the shared log</button>` : ""}
         <button type="button" class="btn btn-small" data-action="sign-out">Sign out</button>
       </div>
     </div></div>`;
@@ -852,6 +962,7 @@ function renderSetup() {
           ${canWrite() ? `<label class="btn" for="import-file">Import backup</label><input type="file" id="import-file" accept="application/json,.json" class="visually-hidden">
           <button type="button" class="btn btn-quiet" data-action="paste-toggle">Paste backup text</button>` : ""}
         </div>
+        <p class="alert" id="backup-error" role="alert" hidden></p>
         <div class="field" id="paste-box" hidden>
           <label for="paste-text">Paste the backup text</label>
           <textarea class="input" id="paste-text" placeholder='{"app":"first-bites", …}'></textarea>
@@ -868,8 +979,20 @@ function renderSetup() {
       </section>` : ""}
       ${canWrite() ? `<section class="panel">
         <h2>Start over</h2>
-        <p class="muted">Deletes every logged try, the to-try list and your baby's details${local ? " from this device" : " for both of you"}. Export a backup first if you might want them back.</p>
-        <div class="button-row"><button type="button" class="btn btn-danger" data-action="clear-all">Delete all data</button></div>
+        <p class="muted">Deletes every logged try, the to-try list and your baby's details${local ? " from this phone" : " for both of you"}.</p>
+        <div class="button-row"><button type="button" class="btn btn-danger" data-action="clear-all" aria-expanded="false" aria-controls="clear-box">Delete all data…</button></div>
+        <div class="danger-box" id="clear-box" hidden>
+          <p id="clear-what"></p>
+          <div class="button-row"><button type="button" class="btn btn-small" data-action="export">Export a backup first</button></div>
+          <div class="field">
+            <label for="clear-confirm">Type DELETE to confirm</label>
+            <input class="input" id="clear-confirm" autocomplete="off" autocapitalize="characters" spellcheck="false" style="max-width:14rem">
+          </div>
+          <div class="button-row">
+            <button type="button" class="btn btn-danger" data-action="clear-all-confirm" disabled>Delete everything</button>
+            <button type="button" class="btn btn-quiet" data-action="clear-cancel">Cancel</button>
+          </div>
+        </div>
       </section>` : ""}
     </div>`;
 }
@@ -960,36 +1083,64 @@ async function showExportText(text) {
   }
 }
 
+function showBackupError(message) {
+  const el = $("#backup-error");
+  if (!el) return toast(message);
+  el.textContent = message;
+  el.hidden = !message;
+}
+
+// Returns true when the backup was read and merged.
 async function importText(text) {
+  showBackupError("");
+  if (!text.trim()) {
+    showBackupError("Paste the backup text first.");
+    return false;
+  }
   let backup;
   try {
     backup = JSON.parse(text);
   } catch {
-    toast("That doesn't look like a First Bites backup.");
-    return;
+    showBackupError("That doesn't look like a First Bites backup. Choose the .json file you exported, or paste its full text.");
+    return false;
   }
   try {
     const { added, updated } = await app.store.importBackup(backup);
     toast(added || updated ? `Imported ${plural(added, "new try", "new tries")}${updated ? `, updated ${updated}` : ""}` : "Already up to date: nothing new in that backup");
+    return true;
   } catch (err) {
-    toast(err && err.code ? describeStoreError(err) : err.message);
+    showBackupError(err && err.code ? describeStoreError(err) : err.message);
+    return false;
   }
 }
 
-let clearArmed = false;
-async function clearAll(button) {
-  if (!clearArmed) {
-    clearArmed = true;
-    button.textContent = "Tap again to delete everything";
-    setTimeout(() => {
-      clearArmed = false;
-      if (button.isConnected) button.textContent = "Delete all data";
-    }, 5000);
-    return;
-  }
-  clearArmed = false;
+function importFile(file) {
+  showBackupError("");
+  if (file.size > 5_000_000) return showBackupError("That file is too big to be a First Bites backup.");
+  file.text().then(importText, () => showBackupError("Couldn't read that file. Try exporting the backup again."));
+}
+
+function toggleClearBox(open) {
+  const box = $("#clear-box");
+  if (!box) return;
+  box.hidden = !open;
+  $('[data-action="clear-all"]').setAttribute("aria-expanded", String(open));
+  $("#clear-confirm").value = "";
+  $('[data-action="clear-all-confirm"]').disabled = true;
+  if (!open) return;
+  const tries = Object.keys(app.state.logs).length;
+  const queued = Object.keys(app.state.queue).length;
+  const what = [plural(tries, "logged try", "logged tries"), queued ? `${plural(queued, "food")} on the to-try list` : "", "your baby's details"].filter(Boolean);
+  const where = app.store.mode === "local" ? "from this phone" : "from the shared log, so they'll disappear from your partner's phone too";
+  $("#clear-what").innerHTML = `<strong>This can't be undone.</strong> It deletes ${esc(what.slice(0, -1).join(", "))} and ${esc(what[what.length - 1])} ${esc(where)}.`;
+  $("#clear-confirm").focus();
+}
+
+async function clearAll() {
+  if ($("#clear-confirm").value.trim().toUpperCase() !== "DELETE") return;
   try {
     await app.store.clearAll();
+    toggleClearBox(false);
     toast("All data deleted");
   } catch (err) {
     toast(describeStoreError(err));
@@ -1031,8 +1182,8 @@ function route() {
 function refresh() {
   renderChrome();
   if (app.view === "foods") {
-    const notice = $("#baby-notice");
-    if (notice) notice.innerHTML = babyNoticeHTML();
+    const notices = $("#status-notices");
+    if (notices) notices.innerHTML = statusNoticesHTML();
     const ready = $("#ready-option");
     if (ready) ready.textContent = readyFilterLabel();
     renderFoodResults();
@@ -1103,6 +1254,12 @@ document.addEventListener("click", (e) => {
       openLogDialog(t.dataset.food, t.dataset.log);
       break;
     case "close-log":
+      requestCloseLog();
+      break;
+    case "keep-editing":
+      setLogDiscardBar(false);
+      break;
+    case "discard-log":
       logDialog.close();
       break;
     case "delete-log":
@@ -1126,10 +1283,16 @@ document.addEventListener("click", (e) => {
       if (!$("#paste-box").hidden) $("#paste-text").focus();
       break;
     case "paste-import":
-      importText($("#paste-text").value).then(() => ($("#paste-text").value = ""));
+      importText($("#paste-text").value).then((ok) => ok && ($("#paste-text").value = ""));
       break;
     case "clear-all":
-      clearAll(t);
+      toggleClearBox($("#clear-box").hidden);
+      break;
+    case "clear-cancel":
+      toggleClearBox(false);
+      break;
+    case "clear-all-confirm":
+      clearAll();
       break;
     case "sign-out":
       app.cloudApi?.signOut().then(() => toast("Signed out. New tries will be saved on this phone only."));
@@ -1142,6 +1305,12 @@ document.addEventListener("click", (e) => {
       break;
     case "retry-cloud":
       startCloud();
+      break;
+    case "retry-store":
+      if (app.store.restart) {
+        app.store.restart();
+        refresh();
+      } else location.reload();
       break;
     case "install":
       promptInstall();
@@ -1161,6 +1330,8 @@ document.addEventListener("input", (e) => {
   if (e.target.id === "food-search") {
     app.filters.q = e.target.value;
     renderFoodResults();
+  } else if (e.target.id === "clear-confirm") {
+    $('[data-action="clear-all-confirm"]').disabled = e.target.value.trim().toUpperCase() !== "DELETE";
   }
 });
 
@@ -1180,10 +1351,13 @@ document.addEventListener("change", (e) => {
     return;
   } else if (t.id === "import-file") {
     const file = t.files && t.files[0];
-    if (file) file.text().then(importText);
+    if (file) importFile(file);
     t.value = "";
     return;
-  } else return;
+  } else {
+    if (t.form && t.form.id === "log-form") $("#log-error", logDialog).hidden = true;
+    return;
+  }
   renderFoodResults();
 });
 
@@ -1206,8 +1380,15 @@ sheet.addEventListener("click", (e) => {
   if (e.target === sheet) closeFood();
 });
 
+// Escape, the Android back gesture and taps outside the form all ask before
+// throwing away what's been entered.
+logDialog.addEventListener("cancel", (e) => {
+  e.preventDefault();
+  requestCloseLog();
+});
+
 logDialog.addEventListener("click", (e) => {
-  if (e.target === logDialog) logDialog.close();
+  if (e.target === logDialog) requestCloseLog();
 });
 
 window.addEventListener("hashchange", route);
@@ -1232,16 +1413,31 @@ function installDismissed() {
   }
 }
 
+// Steps for the browser in use, for when it doesn't offer its own prompt.
+function installSteps() {
+  const ua = navigator.userAgent;
+  const android = /android/i.test(ua);
+  if (/iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) {
+    return "Tap the Share button (the square with an arrow), then <strong>Add to Home Screen</strong>.";
+  }
+  if (/firefox|fxios/i.test(ua)) {
+    return android
+      ? "Tap the menu button (⋮), then <strong>Add app to Home screen</strong> or <strong>Add to Home screen</strong>."
+      : "Firefox on a computer can't install apps like this. Bookmark this page, or open it in Chrome or Edge to install it.";
+  }
+  if (/samsungbrowser/i.test(ua)) return "Tap the menu button (☰), then <strong>Add page to</strong> and <strong>Home screen</strong>.";
+  if (android) {
+    return "Tap the menu button (⋮), then <strong>Add to home screen</strong> or <strong>Install app</strong>. If neither is there, open this page in Firefox and add it from its menu.";
+  }
+  return "Click the install icon at the right of the address bar, or open the browser menu and choose <strong>Install First Bites</strong>.";
+}
+
 function installHTML() {
-  const iphone = /iphone|ipad|ipod/i.test(navigator.userAgent);
   if (install.prompt) {
     return `<p class="muted">Add First Bites to your home screen. It opens like a normal app and works offline.</p>
       <div class="button-row"><button type="button" class="btn btn-primary" data-action="install">Install First Bites</button></div>`;
   }
-  if (iphone) {
-    return `<p class="muted">Open this page in Safari, tap the Share button, then <strong>Add to Home Screen</strong>. It works offline once installed.</p>`;
-  }
-  return `<p class="muted">An <strong>Install First Bites</strong> button appears here when your browser is ready to install it. If it doesn't, open the browser menu and look for <strong>Install app</strong> or <strong>Add to home screen</strong>. It works offline once installed.</p>`;
+  return `<p class="muted">${installSteps()} It opens like a normal app and works offline.</p>`;
 }
 
 function installNoticeHTML() {
@@ -1302,6 +1498,12 @@ function attachStore(store) {
   store.onError = (err) => toast(describeStoreError(err));
   if (store.start && store.mode === "cloud") store.start();
   app.unsubscribe = store.subscribe((state) => {
+    // Same data with a new sync status (e.g. a write reached the server):
+    // only the Baby tab's sync note needs redrawing.
+    if (state === app.state && !store.error) {
+      if (app.view === "setup") refreshSetup();
+      return;
+    }
     app.state = state;
     app.summaries = L.summarizeAll(state);
     refresh();
@@ -1368,11 +1570,16 @@ async function resetPassword() {
   }
 }
 
+// Move tries logged while signed out into the shared log. They leave this
+// phone's own log, so they're only offered once.
 async function copyLocalToCloud() {
+  if (!unsyncedLocalIds().length) return;
   const local = readLocalState(KNOWN_IDS);
   try {
     const { added } = await app.store.importBackup(L.makeBackup(local));
-    toast(`Added ${plural(added, "try", "tries")} to the shared log`);
+    removeLocalLogs(Object.keys(local.logs), KNOWN_IDS);
+    toast(`Moved ${plural(added, "try", "tries")} to the shared log`);
+    refresh();
   } catch (err) {
     toast(describeStoreError(err));
   }

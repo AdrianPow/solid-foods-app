@@ -45,8 +45,21 @@ test("summarizeLogs derives status from the latest try and any reaction", () => 
   assert.equal(liked.lastDate, "2026-10-05");
   const learning = L.summarizeLogs([log("a", "egg", "2026-10-05", "loved"), log("b", "egg", "2026-10-01", "disliked", { createdAt: 9 })]);
   assert.equal(learning.status, "liked", "order comes from the try date, not insertion order");
-  const reaction = L.summarizeLogs([log("a", "egg", "2026-10-01", "liked", { reactions: ["rash"] }), log("b", "egg", "2026-10-05", "loved")]);
+  const reaction = L.summarizeLogs([log("a", "egg", "2026-10-01", "liked"), log("b", "egg", "2026-10-05", "loved", { reactions: ["rash"] })]);
   assert.equal(reaction.status, "reaction");
+  assert.equal(reaction.lastReactionDate, "2026-10-05");
+  const recovered = L.summarizeLogs([log("a", "egg", "2026-10-01", "liked", { reactions: ["rash"] }), log("b", "egg", "2026-10-05", "loved")]);
+  assert.equal(recovered.status, "liked", "a later try without symptoms moves on from the reaction");
+  assert.equal(recovered.reactionCount, 1);
+  assert.equal(recovered.lastReactionDate, "2026-10-01");
+});
+
+test("formatAgeLong spells out ages for sentences", () => {
+  assert.equal(L.formatAgeLong(1), "1 month");
+  assert.equal(L.formatAgeLong(4), "4 months");
+  assert.equal(L.formatAgeLong(24), "2 years");
+  assert.equal(L.formatAgeLong(25), "2 years 1 month");
+  assert.equal(L.formatAgeLong(null), "");
 });
 
 test("allergenProgress marks introduced, due and reaction states", () => {
@@ -54,12 +67,15 @@ test("allergenProgress marks introduced, due and reaction states", () => {
   state.logs.a = log("a", "eggs", "2026-10-20", "liked");
   state.logs.b = log("b", "peanut-butter", "2026-10-01", "liked");
   state.logs.c = log("c", "yogurt", "2026-10-20", "liked", { reactions: ["rash"] });
+  state.logs.d = log("d", "salmon", "2026-10-10", "liked", { reactions: ["rash"] });
+  state.logs.e = log("e", "salmon", "2026-10-21", "liked");
   const summaries = L.summarizeAll(state);
   const rows = Object.fromEntries(L.allergenProgress(FOODS, summaries, "2026-10-22").map((r) => [r.id, r]));
   assert.equal(rows.egg.state, "ok");
   assert.equal(rows.egg.daysSince, 2);
   assert.equal(rows.peanut.state, "due");
   assert.equal(rows.milk.state, "reaction");
+  assert.equal(rows.fish.state, "ok", "fish was offered again without symptoms");
   assert.equal(rows.sesame.state, "new");
 });
 

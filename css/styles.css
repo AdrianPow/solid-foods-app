@@ -246,7 +246,7 @@ button {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding-block: 10px;
+  padding-block: 6px;
   padding-left: var(--gutter-l);
   padding-right: var(--gutter-r);
 }
@@ -254,6 +254,7 @@ button {
 .brand {
   display: flex;
   align-items: center;
+  min-height: 44px;
   gap: 10px;
   text-decoration: none;
   color: var(--ink);
@@ -325,7 +326,8 @@ button {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 12px;
+  min-height: 44px;
+  padding: 6px 14px;
   border-radius: 999px;
   border: 1px solid var(--line);
   text-decoration: none;
@@ -442,8 +444,13 @@ main {
   color: var(--ink-2);
 }
 
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .btn-small {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 12px;
   font-size: var(--step--1);
 }
@@ -536,7 +543,7 @@ main {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 14px;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -573,7 +580,7 @@ main {
 }
 
 .select {
-  min-height: 36px;
+  min-height: 44px;
   padding: 0 32px 0 12px;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -750,11 +757,11 @@ main {
 
 .tile-check {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 0;
+  right: 0;
   z-index: 1;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border: 0;
   border-radius: 50%;
@@ -902,8 +909,8 @@ main {
 
 .sheet-close {
   flex: none;
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 1px solid var(--line);
   background: var(--card);
@@ -1023,7 +1030,7 @@ main {
 
 .stage-btn {
   flex: 1 0 auto;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 12px;
   border: 0;
   border-radius: 7px;
@@ -1122,6 +1129,14 @@ main {
 .status-pill.st-liked { background: var(--good-soft); color: var(--good); }
 .status-pill.st-learning { background: var(--meh-soft); color: var(--meh); }
 .status-pill.st-reaction { background: var(--bad-soft); color: var(--bad); }
+
+.reaction-note {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--step--1);
+  font-weight: 700;
+  color: var(--bad);
+}
 
 .history {
   list-style: none;
@@ -1238,7 +1253,7 @@ fieldset {
 .choice span {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
+  min-height: 44px;
   padding: 0 14px;
   border-radius: 999px;
   border: 1px solid var(--line);
@@ -1260,20 +1275,24 @@ fieldset {
 
 .checks {
   display: grid;
-  gap: 8px;
+  margin-top: 4px;
+}
+
+.checks .alert {
   margin-top: 8px;
 }
 
 .check {
   display: flex;
   gap: 10px;
-  align-items: flex-start;
+  align-items: center;
+  min-height: 44px;
 }
 
 .check input {
   width: 20px;
   height: 20px;
-  margin: 2px 0 0;
+  margin: 0;
   accent-color: var(--pea);
   flex: none;
 }
@@ -1300,6 +1319,44 @@ fieldset {
 
 .form-actions .spacer {
   flex: 1;
+}
+
+/* The log form's buttons (and any error) stay in view while it scrolls. */
+.form-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  gap: 10px;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--card);
+  border-top: 1px solid var(--line);
+}
+
+.discard-bar {
+  display: grid;
+  gap: 8px;
+}
+
+.form-note {
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: var(--sunk);
+  color: var(--ink-2);
+  font-size: var(--step--1);
+}
+
+.danger-box {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--bad);
+  background: var(--bad-soft);
+}
+
+.danger-box strong {
+  color: var(--bad);
 }
 
 /* ---------- progress ---------- */
@@ -1475,11 +1532,6 @@ fieldset {
   color: var(--ink-2);
 }
 
-.bar-row .meter > span {
-  background: var(--tile);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--t-ink) 25%, transparent);
-}
-
 .activity {
   list-style: none;
   margin: 0;
@@ -1519,6 +1571,11 @@ fieldset {
   height: 26px;
 }
 
+.activity .mini-tile {
+  width: 44px;
+  height: 44px;
+}
+
 .queue-item .mini-tile .food-icon {
   width: 20px;
   height: 20px;
@@ -1536,17 +1593,6 @@ fieldset {
 .mini-tile[data-cat="pantry"] { --tile: var(--t-pantry); }
 .mini-tile[data-cat="drinks"] { --tile: var(--t-drinks); }
 
-.bar-row[data-cat="fruit"] { --tile: var(--t-fruit); }
-.bar-row[data-cat="veg"] { --tile: var(--t-veg); }
-.bar-row[data-cat="grain"] { --tile: var(--t-grain); }
-.bar-row[data-cat="legume"] { --tile: var(--t-legume); }
-.bar-row[data-cat="meat"] { --tile: var(--t-meat); }
-.bar-row[data-cat="fish"] { --tile: var(--t-fish); }
-.bar-row[data-cat="dairy"] { --tile: var(--t-dairy); }
-.bar-row[data-cat="nuts"] { --tile: var(--t-nuts); }
-.bar-row[data-cat="herbs"] { --tile: var(--t-herbs); }
-.bar-row[data-cat="pantry"] { --tile: var(--t-pantry); }
-.bar-row[data-cat="drinks"] { --tile: var(--t-drinks); }
 
 .activity .what {
   min-width: 0;
@@ -1584,7 +1630,8 @@ fieldset {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 12px 4px 4px;
+  min-height: 44px;
+  padding: 4px 14px 4px 6px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--card);
@@ -1595,8 +1642,8 @@ fieldset {
 }
 
 .queue-item .mini-tile {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   font-size: 0.75rem;
 }
@@ -1636,8 +1683,10 @@ fieldset {
 }
 
 .toc a {
-  display: inline-block;
-  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 6px 12px;
   border-radius: 6px;
   font-size: var(--step--1);
   font-weight: 700;
@@ -1648,7 +1697,7 @@ fieldset {
 
 @media (min-width: 900px) {
   .toc a {
-    display: block;
+    display: flex;
     background: transparent;
   }
 
@@ -1777,6 +1826,9 @@ fieldset {
 /* ---------- toast ---------- */
 .toast {
   position: fixed;
+  inset: auto;
+  margin: 0;
+  border: 0;
   left: 50%;
   bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 16px);
   transform: translateX(-50%);

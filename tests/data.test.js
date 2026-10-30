@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FOODS } from "../js/data/index.js";
-import { ALLERGENS, CATEGORIES, CHOKING } from "../js/data/meta.js";
+import { ALLERGENS, ALLERGEN_STARTERS, CATEGORIES, CHOKING } from "../js/data/meta.js";
 import { GUIDE } from "../js/data/guide.js";
 import { ICONS } from "../js/data/icons.js";
 import { FOOD_ICONS } from "../js/data/food-icons.js";
@@ -59,6 +59,11 @@ test("every allergen has at least one food that can be offered at 6 months", () 
   for (const a of ALLERGENS) {
     assert.ok(FOODS.some((f) => f.allergens.includes(a.id) && f.age === 6), a.id);
   }
+});
+
+test("every allergen has first-food ideas", () => {
+  for (const a of ALLERGENS) assert.ok(ALLERGEN_STARTERS[a.id], a.id);
+  assert.deepEqual(Object.keys(ALLERGEN_STARTERS).sort(), ALLERGENS.map((a) => a.id).sort());
 });
 
 test("every food has its own icon mapping, and no mapping is stale", () => {

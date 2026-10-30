@@ -71,7 +71,7 @@ Firebase is Google's app database service. The free plan is plenty for this app.
    ```
 
    This config isn't a secret (it only names your project), so it's fine in a public repository. The rules from step 3 are what keep the data private.
-7. Commit the change to the default branch. Once the site redeploys, open the **Baby** tab on each phone and sign in. If a phone already has tries saved from before, tap **Add them to the shared log**.
+7. Commit the change to the default branch. Once the site redeploys, open the **Baby** tab on each phone and sign in. If a phone already has tries saved from before, tap **Move them to the shared log**.
 
 After that, a try logged on either phone shows up on the other within seconds. Logging works offline too, and catches up when the phone reconnects.
 
