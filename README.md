@@ -12,10 +12,10 @@ served, and any reaction.
   - common allergens, choking risk, and whether it's iron-rich
   - safety and nutrition tips
   - a link to the food's page on [Solid Starts](https://solidstarts.com/foods/) for their full guide, photos and videos (356 foods have one)
-- **Tracker.** Tap the circle on any food tile to log a try: the date, how it went (loved it → wouldn't try), how it was served, any reaction signs, and notes. Each tile shows its status and how many times it's been tried.
+- **Tracker.** Tap the circle on any food tile and pick a face (loved it → wouldn't try) to log today's try in one tap. **Add details** covers the date, how it was served, any reaction signs and notes. Each tile shows its status (liked, still learning or reaction, each with its own symbol) and how many times it's been tried.
 - **Progress.** Foods tried against your goal (100 before the first birthday by default), the nine common allergens (with a nudge when one hasn't been offered in a week), a to-try list, progress by category, and recent tries showing who logged each one.
 - **Guide.** Readiness signs, safe set-up, gagging vs. choking, sizes and shapes by age, common choking hazards, allergen introduction, reaction signs, foods to avoid, iron, and how much to offer.
-- **Search and filters** by name (including other names like *courgette* and *capsicum*), category, allergen, what's safe at your baby's age, iron-rich, choking hazards, and tried/liked/still learning/reaction/to-try.
+- **Search and filters** (behind the Filters button) by name (including other names like *courgette* and *capsicum*), category, allergen, what's safe at your baby's age, iron-rich, choking hazards, and tried/liked/still learning/reaction/to-try.
 
 ## About the food information
 

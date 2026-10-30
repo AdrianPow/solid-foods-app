@@ -566,34 +566,106 @@ main {
   font-weight: 400;
 }
 
-.filter-selects {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+/* Fade an edge of the status row when more chips sit beyond it. */
+.chip-row.fade-end {
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent);
+}
+
+.chip-row.fade-start {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 40px);
+  mask-image: linear-gradient(to right, transparent, #000 40px);
+}
+
+.chip-row.fade-start.fade-end {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent);
+}
+
+.search-row {
+  display: flex;
   gap: 8px;
 }
 
-@media (min-width: 760px) {
-  .filter-selects {
-    display: flex;
-    flex-wrap: wrap;
-  }
+.search-row .search {
+  flex: 1;
+  min-width: 0;
 }
 
-.select {
-  min-height: 44px;
-  padding: 0 32px 0 12px;
-  border-radius: 999px;
+.filter-btn {
+  position: relative;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
   border: 1px solid var(--line);
-  background: var(--card)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23808a7c' stroke-width='2.5' stroke-linecap='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")
-    no-repeat right 10px center / 14px;
-  appearance: none;
-  font-size: var(--step--1);
-  font-weight: 700;
+  background: var(--card);
   color: var(--ink-2);
-  max-width: 100%;
-  min-width: 0;
-  text-overflow: ellipsis;
+  display: grid;
+  place-items: center;
+}
+
+.filter-btn svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.filter-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--pea);
+  color: var(--pea-ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+
+.active-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip-on {
+  background: var(--pea-soft);
+  border-color: transparent;
+  color: var(--pea);
+}
+
+.chip-on svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.legend > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.legend svg {
+  width: 16px;
+  height: 16px;
 }
 
 .result-line {
@@ -609,14 +681,14 @@ main {
 
 /* ---------- food grid ---------- */
 .group {
-  margin-bottom: 28px;
+  margin-bottom: 22px;
 }
 
 .group-head {
   display: flex;
   align-items: baseline;
   gap: 10px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .group-head h2 {
@@ -630,7 +702,7 @@ main {
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(108px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
   gap: 8px;
 }
 
@@ -638,9 +710,8 @@ main {
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 118px;
   padding: 8px 9px 9px;
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--tile, var(--t-pantry));
   color: var(--t-ink);
   overflow: hidden;
@@ -685,25 +756,10 @@ main {
   }
 }
 
-.tile-age {
-  font-size: 0.75rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  opacity: 0.8;
-}
-
-.tile-age.is-wait {
-  opacity: 1;
-  text-decoration: underline wavy;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-}
-
 .tile-icon {
-  width: 44px;
-  height: 44px;
-  margin: 8px 0 6px;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 5px;
   flex: none;
 }
 
@@ -721,30 +777,31 @@ main {
 }
 
 .tile-name {
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 16px;
   overflow-wrap: anywhere;
 }
 
+/* Badges flow on after the name, so most tiles need no extra row. */
 .tile-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: auto;
-  padding-top: 6px;
-  min-height: 24px;
+  display: inline;
 }
 
 .tag {
   display: inline-flex;
   align-items: center;
-  height: 18px;
-  padding: 0 5px;
+  justify-content: center;
+  height: 16px;
+  min-width: 16px;
+  margin-left: 3px;
+  padding: 0 4px;
   border-radius: 4px;
-  font-size: 0.6875rem;
+  vertical-align: top;
+  font-size: 0.625rem;
   font-weight: 700;
   line-height: 1;
+  white-space: nowrap;
   border: 1px solid color-mix(in srgb, var(--t-ink) 35%, transparent);
   font-variant-numeric: tabular-nums;
 }
@@ -753,6 +810,32 @@ main {
   background: var(--t-ink);
   color: var(--tile, var(--paper));
   border-color: var(--t-ink);
+}
+
+.tag-wait {
+  background: var(--meh);
+  border-color: var(--meh);
+  color: var(--card);
+}
+
+.tag-bad {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: var(--card);
+}
+
+.tag-icon {
+  padding: 0 2px;
+}
+
+.tag-icon svg {
+  width: 11px;
+  height: 11px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .tile-check {
@@ -766,6 +849,7 @@ main {
   border: 0;
   border-radius: 50%;
   background: transparent;
+  color: var(--t-ink);
   display: grid;
   place-items: center;
 }
@@ -775,11 +859,37 @@ main {
   height: 26px;
 }
 
+/* Tries so far, as a small bubble on the mark. */
+.tile-count {
+  position: absolute;
+  right: 4px;
+  bottom: 5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--t-ink) 25%, transparent);
+  font-size: 0.625rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .mark-ring {
   fill: color-mix(in srgb, var(--card) 55%, transparent);
   stroke: color-mix(in srgb, var(--t-ink) 45%, transparent);
   stroke-width: 1.5;
   stroke-dasharray: 3 2.5;
+}
+
+.mark-plus {
+  fill: none;
+  stroke: color-mix(in srgb, var(--t-ink) 60%, transparent);
+  stroke-width: 1.8;
+  stroke-linecap: round;
 }
 
 .mark-fill {
@@ -794,6 +904,11 @@ main {
   stroke-linejoin: round;
 }
 
+/* Drawn at half size, so twice the stroke. */
+.mark-cycle {
+  stroke-width: 4.6;
+}
+
 .st-liked .mark-fill { fill: var(--good); }
 .st-learning .mark-fill { fill: var(--meh); }
 .st-reaction .mark-fill { fill: var(--bad); }
@@ -806,15 +921,6 @@ main {
   :root:not([data-theme="light"]) .mark-glyph {
     stroke: #10160f;
   }
-}
-
-.tile-count {
-  position: absolute;
-  right: 9px;
-  bottom: 9px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
 }
 
 .empty {
@@ -1087,31 +1193,45 @@ main {
   background: var(--pea);
 }
 
-.log-panel {
-  padding: 16px;
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
-  background: var(--sunk);
-  display: grid;
-  gap: 14px;
-}
-
-.log-summary {
+.log-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 6px 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--sunk);
 }
 
-.log-summary > div {
-  min-width: 0;
+.log-status .reaction-note {
+  flex-basis: 100%;
+  margin-top: 0;
 }
 
-.log-actions {
+/* Logging stays one tap away while reading a food's page. */
+.sheet-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
-  flex-wrap: wrap;
   gap: 8px;
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px));
+  background: var(--card);
+  border-top: 1px solid var(--line);
+}
+
+.sheet-foot .btn-primary {
+  flex: 1;
+}
+
+#sheet-queue[aria-pressed="true"] {
+  background: var(--pea-soft);
+  border-color: transparent;
+  color: var(--pea);
+}
+
+#sheet-queue[aria-pressed="true"] svg {
+  fill: currentColor;
 }
 
 .status-pill {
@@ -1124,6 +1244,12 @@ main {
   font-weight: 700;
   background: var(--card);
   color: var(--ink-2);
+}
+
+.status-pill svg {
+  width: 16px;
+  height: 16px;
+  margin-left: -4px;
 }
 
 .status-pill.st-liked { background: var(--good-soft); color: var(--good); }
@@ -1160,8 +1286,14 @@ main {
   font-weight: 700;
 }
 
+.history li > .btn {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: center;
+}
+
 .history .detail {
-  grid-column: 1 / -1;
+  grid-column: 1;
   font-size: var(--step--1);
   color: var(--ink-2);
   overflow-wrap: anywhere;
@@ -1319,6 +1451,56 @@ fieldset {
 
 .form-actions .spacer {
   flex: 1;
+}
+
+/* Quick log: one tap on a face saves today's try. */
+.face-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.face-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-height: 92px;
+  padding: 10px 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.face-btn:hover {
+  border-color: var(--pea);
+}
+
+.face-btn:active {
+  background: var(--pea-soft);
+}
+
+.face-icon {
+  width: 38px;
+  height: 38px;
+  flex: none;
+}
+
+.quick-more {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.quick-more .btn {
+  white-space: normal;
+  text-align: center;
 }
 
 /* The log form's buttons (and any error) stay in view while it scrolls. */

@@ -1,12 +1,13 @@
-// Generates js/data/icons.js: the food tile icons, taken from Microsoft's
+// Generates js/data/icons.js: the food tile and outcome icons, taken from Microsoft's
 // Fluent Emoji Flat set (MIT licensed, via @iconify-json/fluent-emoji-flat)
 // plus recolored variants for foods that have no emoji of their own.
-// Only icons referenced in js/data/food-icons.js are included.
+// Only icons referenced in js/data/food-icons.js or OUTCOMES are included.
 //
 // Usage: npm run build:icons
 import { readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { CATEGORY_ICONS, FOOD_ICONS } from "../js/data/food-icons.js";
+import { OUTCOMES } from "../js/data/meta.js";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const set = JSON.parse(await readFile(root + "node_modules/@iconify-json/fluent-emoji-flat/icons.json", "utf8"));
@@ -195,7 +196,7 @@ function tidy(body, key) {
     .replace(/href="#([^"]+)"/g, `href="#${key}-$1"`);
 }
 
-const wanted = new Set([...Object.values(FOOD_ICONS), ...Object.values(CATEGORY_ICONS)]);
+const wanted = new Set([...Object.values(FOOD_ICONS), ...Object.values(CATEGORY_ICONS), ...OUTCOMES.map((o) => o.icon)]);
 const out = {};
 for (const key of [...wanted].sort()) {
   const variant = VARIANTS[key];

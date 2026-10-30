@@ -55,12 +55,13 @@ export const CHOKING = {
   high: { label: "Common choking hazard", short: "Choking hazard" },
 };
 
+// `icon` names a Fluent Emoji face, used on the quick log buttons.
 export const OUTCOMES = [
-  { id: "loved", label: "Loved it", tone: "good" },
-  { id: "liked", label: "Liked it", tone: "good" },
-  { id: "unsure", label: "Not sure", tone: "neutral" },
-  { id: "disliked", label: "Didn't like it", tone: "meh" },
-  { id: "refused", label: "Wouldn't try", tone: "meh" },
+  { id: "loved", label: "Loved it", tone: "good", icon: "smiling-face-with-heart-eyes" },
+  { id: "liked", label: "Liked it", tone: "good", icon: "slightly-smiling-face" },
+  { id: "unsure", label: "Not sure", tone: "neutral", icon: "neutral-face" },
+  { id: "disliked", label: "Didn't like it", tone: "meh", icon: "confounded-face" },
+  { id: "refused", label: "Wouldn't try", tone: "meh", icon: "zipper-mouth-face" },
 ];
 
 export const REACTIONS = [

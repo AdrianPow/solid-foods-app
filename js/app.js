@@ -35,6 +35,7 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const main = $("#view");
 const sheet = $("#food-sheet");
 const logDialog = $("#log-dialog");
+const filterSheet = $("#filter-sheet");
 
 // ---------- helpers ----------
 
@@ -156,10 +157,19 @@ const ICON = {
   close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
-  ring: '<svg viewBox="0 0 26 26" aria-hidden="true"><circle class="mark-ring" cx="13" cy="13" r="11"/></svg>',
-  check: '<svg viewBox="0 0 26 26" aria-hidden="true"><circle class="mark-fill" cx="13" cy="13" r="12"/><path class="mark-glyph" d="M7.5 13.5l3.5 3.5 7.5-8"/></svg>',
-  alert: '<svg viewBox="0 0 26 26" aria-hidden="true"><circle class="mark-fill" cx="13" cy="13" r="12"/><path class="mark-glyph" d="M13 7v7.5M13 18.6v.2"/></svg>',
+  filter: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>',
+  bookmark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4h11v16l-5.5-4-5.5 4z"/></svg>',
+  hazard: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5L21.5 20h-19z"/><path d="M12 10v4.5M12 17.4v.1"/></svg>',
 };
+
+// A different symbol for each status, so they don't rely on color alone.
+const MARK = {
+  new: '<svg viewBox="0 0 26 26" aria-hidden="true"><circle class="mark-ring" cx="13" cy="13" r="11"/><path class="mark-plus" d="M13 9v8M9 13h8"/></svg>',
+  liked: '<svg viewBox="0 0 26 26" aria-hidden="true"><circle class="mark-fill" cx="13" cy="13" r="12"/><path class="mark-glyph" d="M7.5 13.5l3.5 3.5 7.5-8"/></svg>',
+  learning: '<svg viewBox="0 0 26 26" aria-hidden="true"><circle class="mark-fill" cx="13" cy="13" r="12"/><g class="mark-glyph mark-cycle" transform="translate(13 13) scale(.52) translate(-12.5 -12.5)"><path d="M23 4v6h-6"/><path d="M20.5 15a9 9 0 1 1-2.1-9.4L23 10"/></g></svg>',
+  reaction: '<svg viewBox="0 0 26 26" aria-hidden="true"><circle class="mark-fill" cx="13" cy="13" r="12"/><path class="mark-glyph" d="M13 7v7.5M13 18.6v.2"/></svg>',
+};
+const STATUS_SHORT = { liked: "Liked", learning: "Still learning", reaction: "Reaction" };
 
 // ---------- chrome ----------
 
@@ -258,8 +268,6 @@ function statusNoticesHTML() {
 }
 
 function renderFoods() {
-  const f = app.filters;
-  const readyLabel = readyFilterLabel();
   main.innerHTML = `
     <div class="page-head">
       <div>
@@ -270,41 +278,19 @@ function renderFoods() {
     <div id="status-notices">${statusNoticesHTML()}</div>
     <div id="install-notice">${installNoticeHTML()}</div>
     <div class="filters">
-      <label class="search">
-        ${ICON.search}
-        <span class="visually-hidden">Search foods</span>
-        <input id="food-search" type="search" autocomplete="off" placeholder="Search foods, e.g. avocado" value="${esc(f.q)}">
-      </label>
-      <div class="chip-row" id="status-chips" role="group" aria-label="Filter by what you've tried"></div>
-      <div class="filter-selects">
-        <label class="visually-hidden" for="filter-cat">Category</label>
-        <select id="filter-cat" class="select">
-          <option value="all">All categories</option>
-          ${CATEGORIES.map((c) => `<option value="${c.id}"${f.cat === c.id ? " selected" : ""}>${esc(c.label)}</option>`).join("")}
-        </select>
-        <label class="visually-hidden" for="filter-allergen">Allergen</label>
-        <select id="filter-allergen" class="select">
-          <option value="all">Allergens: all foods</option>
-          <option value="any"${f.allergen === "any" ? " selected" : ""}>Any common allergen</option>
-          ${ALLERGENS.map((a) => `<option value="${a.id}"${f.allergen === a.id ? " selected" : ""}>Contains ${esc(a.label.toLowerCase())}</option>`).join("")}
-        </select>
-        <label class="visually-hidden" for="filter-flag">Show</label>
-        <select id="filter-flag" class="select">
-          <option value="all">All ages</option>
-          <option value="ready" id="ready-option"${f.flag === "ready" ? " selected" : ""}>${esc(readyLabel)}</option>
-          <option value="wait"${f.flag === "wait" ? " selected" : ""}>Not yet / avoid</option>
-          <option value="iron"${f.flag === "iron" ? " selected" : ""}>Iron-rich</option>
-          <option value="hazard"${f.flag === "hazard" ? " selected" : ""}>Common choking hazards</option>
-        </select>
-        <label class="visually-hidden" for="sort">Sort</label>
-        <select id="sort" class="select">
-          <option value="category"${f.sort === "category" ? " selected" : ""}>Group by category</option>
-          <option value="az"${f.sort === "az" ? " selected" : ""}>A–Z</option>
-          <option value="recent"${f.sort === "recent" ? " selected" : ""}>Recently tried</option>
-        </select>
+      <div class="search-row">
+        <label class="search">
+          ${ICON.search}
+          <span class="visually-hidden">Search foods</span>
+          <input id="food-search" type="search" autocomplete="off" placeholder="Search foods, e.g. avocado" value="${esc(app.filters.q)}">
+        </label>
+        <button type="button" class="filter-btn" id="filter-btn" data-action="open-filters" aria-haspopup="dialog">${ICON.filter}<span class="filter-count" id="filter-count" hidden></span></button>
       </div>
+      <div class="chip-row" id="status-chips" role="group" aria-label="Filter by what you've tried"></div>
+      <div class="active-filters" id="active-filters" hidden></div>
     </div>
     <div id="food-results"></div>`;
+  $("#status-chips").addEventListener("scroll", (e) => updateChipFade(e.currentTarget), { passive: true });
   renderFoodResults();
 }
 
@@ -316,34 +302,123 @@ function renderStatusChips() {
     const n = base.filter((food) => matchesStatus(food, s.id)).length;
     return `<button type="button" class="chip" data-status="${s.id}" aria-pressed="${app.filters.status === s.id}">${esc(s.label)} <span class="count">${n}</span></button>`;
   }).join("");
+  updateChipFade(row);
 }
 
+// Fade whichever edge of the status row has more chips beyond it.
+function updateChipFade(row) {
+  const max = row.scrollWidth - row.clientWidth;
+  row.classList.toggle("fade-start", row.scrollLeft > 2);
+  row.classList.toggle("fade-end", row.scrollLeft < max - 2);
+}
+
+// ---------- filter sheet ----------
+
+const FILTER_KEYS = ["cat", "allergen", "flag"];
+
+function filterGroups() {
+  return [
+    { key: "cat", legend: "Category", options: [["all", "All"], ...CATEGORIES.map((c) => [c.id, c.label])] },
+    { key: "allergen", legend: "Contains", options: [["all", "Any food"], ["any", "Any common allergen"], ...ALLERGENS.map((a) => [a.id, a.label])] },
+    { key: "flag", legend: "Age and safety", options: [["all", "All ages"], ["ready", readyFilterLabel()], ["wait", "Not yet / avoid"], ["iron", "Iron-rich"], ["hazard", "Common choking hazards"]] },
+    { key: "sort", legend: "Order", options: [["category", "By category"], ["az", "A–Z"], ["recent", "Recently tried"]] },
+  ];
+}
+
+// How an active filter reads on its removable chip.
+function filterLabel(key) {
+  const value = app.filters[key];
+  if (key === "allergen") return value === "any" ? "Any allergen" : `Contains ${ALLERGEN_LABEL[value].toLowerCase()}`;
+  const group = filterGroups().find((g) => g.key === key);
+  return group.options.find(([v]) => v === value)[1];
+}
+
+function renderFilterBar() {
+  const active = FILTER_KEYS.filter((k) => app.filters[k] !== "all");
+  const count = $("#filter-count");
+  if (!count) return;
+  count.textContent = active.length;
+  count.hidden = !active.length;
+  $("#filter-btn").setAttribute("aria-label", active.length ? `Filters (${active.length} on)` : "Filters");
+  const box = $("#active-filters");
+  box.hidden = !active.length;
+  box.innerHTML = active
+    .map((k) => `<button type="button" class="chip chip-on" data-action="clear-filter" data-key="${k}" aria-label="Remove filter: ${esc(filterLabel(k))}">${esc(filterLabel(k))}${ICON.close}</button>`)
+    .join("");
+}
+
+function renderFilterSheet() {
+  filterSheet.innerHTML = `
+    <header class="sheet-head">
+      <div class="sheet-title"><h2 id="filter-title" tabindex="-1">Filters</h2></div>
+      <button type="button" class="sheet-close" data-action="close-filters" aria-label="Close">${ICON.close}</button>
+    </header>
+    <div class="form">
+      ${filterGroups()
+        .map(
+          (g) => `<fieldset class="field">
+            <legend>${esc(g.legend)}</legend>
+            <div class="choice-row">${g.options.map(([value, label]) => `<label class="choice"><input type="radio" name="f-${g.key}" value="${value}"${app.filters[g.key] === value ? " checked" : ""}><span>${esc(label)}</span></label>`).join("")}</div>
+          </fieldset>`,
+        )
+        .join("")}
+    </div>
+    <footer class="form-foot">
+      <div class="form-actions">
+        <button type="button" class="btn btn-quiet" data-action="reset-filters">Clear filters</button>
+        <button type="button" class="btn btn-primary" data-action="close-filters" id="filter-done"></button>
+      </div>
+    </footer>`;
+  updateFilterDone();
+}
+
+function updateFilterDone() {
+  const done = $("#filter-done", filterSheet);
+  if (done) done.textContent = `Show ${plural(FOODS.filter((food) => matchesFilters(food)).length, "food")}`;
+}
+
+function openFilters() {
+  renderFilterSheet();
+  filterSheet.showModal();
+  $("#filter-title", filterSheet).focus();
+}
+
+// Compact tile: icon, name, and small badges that flow after the name. The
+// age only shows when a food isn't ready yet.
 function tileHTML(food) {
   const s = app.summaries.get(food.id);
   const status = s ? s.status : "new";
   const waiting = isWaiting(food);
   const tags = [];
+  if (food.age == null) tags.push('<span class="tag tag-bad" title="Avoid for young children">Avoid</span>');
+  else if (waiting) tags.push(`<span class="tag tag-wait" title="${esc(L.formatAgeRule(food))}">${ageTag(food)}</span>`);
+  if (food.choking === "high") tags.push(`<span class="tag tag-icon" title="Common choking hazard: prepare carefully">${ICON.hazard}</span>`);
   if (food.iron) tags.push('<span class="tag" title="Iron-rich">Fe</span>');
-  const al = food.allergens.slice(0, 2).map((a) => `<span class="tag tag-solid" title="Common allergen: ${esc(ALLERGEN_LABEL[a])}">${esc(ALLERGEN_SHORT[a])}</span>`);
-  tags.push(...al);
-  if (food.allergens.length > 2) tags.push(`<span class="tag tag-solid">+${food.allergens.length - 2}</span>`);
-  if (food.choking === "high") tags.push('<span class="tag" title="Common choking hazard: prepare carefully">Choking</span>');
-  if (app.state.queue[food.id]) tags.push('<span class="tag" title="On your to-try list">Next</span>');
-  const mark = status === "new" ? ICON.ring : status === "reaction" ? ICON.alert : ICON.check;
+  if (food.allergens.length) {
+    const more = food.allergens.length > 1 ? ` +${food.allergens.length - 1}` : "";
+    tags.push(`<span class="tag tag-solid" title="Common allergens: ${esc(food.allergens.map((a) => ALLERGEN_LABEL[a]).join(", "))}">${esc(ALLERGEN_SHORT[food.allergens[0]])}${more}</span>`);
+  }
+  if (app.state.queue[food.id]) tags.push(`<span class="tag tag-icon" title="On your to-try list">${ICON.bookmark}</span>`);
   const markLabel = s
     ? `${food.name}: tried ${plural(s.count, "time")}, ${STATUS_LABEL[status].toLowerCase()}. Log another try`
     : `Log a first try of ${food.name}`;
   const ageTitle = food.age == null ? "Not recommended for young children" : `${L.formatAgeRule(food)}${waiting ? " (not yet for your baby)" : ""}`;
+  const extras = [food.choking === "high" && "Common choking hazard", food.iron && "Iron-rich", food.allergens.length && `Contains ${food.allergens.map((a) => ALLERGEN_LABEL[a].toLowerCase()).join(", ")}`].filter(Boolean);
+  const mark = MARK[status] + (s && s.count > 1 ? `<span class="tile-count">${s.count}</span>` : "");
   return `<div class="tile st-${status}" data-cat="${food.cat}">
-    <button type="button" class="tile-open" data-open="${food.id}" aria-label="${esc(food.name)}. ${esc(ageTitle)}. ${esc(STATUS_LABEL[status])}.">
-      <span class="tile-age${waiting ? " is-wait" : ""}" title="${esc(ageTitle)}">${ageTag(food)}</span>
+    <button type="button" class="tile-open" data-open="${food.id}" aria-label="${esc([food.name, ageTitle, ...extras, STATUS_LABEL[status]].join(". "))}.">
       ${iconHTML(food, "tile-icon")}
-      <span class="tile-name">${esc(food.name)}</span>
-      <span class="tile-tags">${tags.join("")}</span>
+      <span class="tile-name">${esc(food.name)}${tags.length ? `<span class="tile-tags" aria-hidden="true">${tags.join("")}</span>` : ""}</span>
     </button>
     ${canWrite() ? `<button type="button" class="tile-check" data-action="log" data-food="${food.id}" aria-label="${esc(markLabel)}">${mark}</button>` : `<span class="tile-check" aria-hidden="true">${mark}</span>`}
-    ${s ? `<span class="tile-count" aria-hidden="true">×${s.count}</span>` : ""}
   </div>`;
+}
+
+function legendHTML() {
+  if (!app.summaries.size) return "";
+  return `<span class="legend" aria-hidden="true">${Object.entries(STATUS_SHORT)
+    .map(([status, label]) => `<span class="st-${status}">${MARK[status]}${label}</span>`)
+    .join("")}</span>`;
 }
 
 function sortFoods(list) {
@@ -364,7 +439,8 @@ function renderFoodResults() {
   renderStatusChips();
   const list = sortFoods(FOODS.filter((food) => matchesFilters(food)));
   const tried = list.filter((food) => app.summaries.has(food.id)).length;
-  const line = `<p class="result-line"><span class="num">${plural(list.length, "food")} · ${tried} tried</span>${loading() ? '<span>Loading your tracker…</span>' : ""}</p>`;
+  renderFilterBar();
+  const line = `<p class="result-line"><span class="num">${plural(list.length, "food")} · ${tried} tried</span>${loading() ? "<span>Loading your tracker…</span>" : legendHTML()}</p>`;
   if (!list.length) {
     box.innerHTML = `${line}<div class="empty"><strong>No foods match</strong>Try a different search, or clear the filters.<div style="margin-top:12px"><button type="button" class="btn btn-small" data-action="clear-filters">Clear filters</button></div></div>`;
     return;
@@ -400,44 +476,65 @@ function factsHTML(food) {
   return `<div class="facts">${facts.join("")}</div>`;
 }
 
-function logPanelHTML(food) {
-  const logs = L.logsForFood(app.state, food.id).reverse();
+// One line near the top of a food's page: how it's going so far.
+function statusLineHTML(food) {
   const s = app.summaries.get(food.id);
+  if (!s) return loading() ? "<p>Loading your log…</p>" : loadError() ? "<p>Your log didn't load.</p>" : "";
+  const pastReaction = s.status !== "reaction" && s.lastReactionDate;
+  return `<span class="status-pill st-${s.status}">${MARK[s.status]}${esc(STATUS_LABEL[s.status])}</span>
+    <span>Tried ${plural(s.count, "time")}, last on ${esc(fmtDate(s.lastDate))}</span>
+    ${pastReaction ? `<span class="reaction-note">Reaction noted on ${esc(fmtDate(s.lastReactionDate))}</span>` : ""}`;
+}
+
+function historyHTML(food) {
+  const logs = L.logsForFood(app.state, food.id).reverse();
+  if (!logs.length) return "";
+  return `<h3>Our tries</h3><ul class="history">${logs
+    .map((log) => {
+      const who = whoLogged(log);
+      const details = [log.served && `Served: ${esc(log.served)}`, log.notes && esc(log.notes), who && `Logged by ${esc(who)}`].filter(Boolean);
+      const reactions = (log.reactions || []).map((r) => REACTION_LABEL[r] || r);
+      return `<li>
+        <span class="when">${esc(fmtDate(log.date))} · ${esc(OUTCOME_LABEL[log.outcome])}</span>
+        ${canWrite() ? `<button type="button" class="btn btn-small btn-quiet" data-action="edit-log" data-food="${food.id}" data-log="${esc(log.id)}">Edit</button>` : "<span></span>"}
+        ${reactions.length ? `<p class="detail reaction-line">Reaction: ${esc(reactions.join(", "))}</p>` : ""}
+        ${details.length ? `<p class="detail">${details.join(" · ")}</p>` : ""}
+      </li>`;
+    })
+    .join("")}</ul>`;
+}
+
+// Pinned to the bottom of a food's page, so logging is always one tap away.
+function sheetFootHTML(food) {
+  if (!canWrite()) return "";
   const queued = !!app.state.queue[food.id];
-  const pastReaction = s && s.status !== "reaction" && s.lastReactionDate;
-  const summary = s
-    ? `<span class="status-pill st-${s.status}">${esc(STATUS_LABEL[s.status])}</span> Tried ${plural(s.count, "time")}, last on ${esc(fmtDate(s.lastDate))}${pastReaction ? `<span class="reaction-note">Reaction noted on ${esc(fmtDate(s.lastReactionDate))}</span>` : ""}`
-    : loading()
-      ? "Loading…"
-      : loadError()
-        ? "Your log didn't load."
-        : `<span class="status-pill">Not tried yet</span>`;
   // Foods to avoid don't belong on a to-try list (unless already there).
-  const queueButton = food.age != null || queued
-    ? `<button type="button" class="btn" data-action="queue" data-food="${food.id}" aria-pressed="${queued}">${queued ? "On to-try list" : "Add to to-try list"}</button>`
-    : "";
-  const actions = canWrite()
-    ? `<div class="log-actions">
-        <button type="button" class="btn btn-primary" data-action="log" data-food="${food.id}">${ICON.plus}${s ? "Log another try" : "Log a try"}</button>
-        ${queueButton}
-      </div>`
-    : "";
-  const history = logs.length
-    ? `<ul class="history">${logs
-        .map((log) => {
-          const who = whoLogged(log);
-          const details = [log.served && `Served: ${esc(log.served)}`, log.notes && esc(log.notes), who && `Logged by ${esc(who)}`].filter(Boolean);
-          const reactions = (log.reactions || []).map((r) => REACTION_LABEL[r] || r);
-          return `<li>
-            <span class="when">${esc(fmtDate(log.date))} · ${esc(OUTCOME_LABEL[log.outcome])}</span>
-            ${canWrite() ? `<button type="button" class="btn btn-small btn-quiet" data-action="edit-log" data-food="${food.id}" data-log="${esc(log.id)}">Edit</button>` : "<span></span>"}
-            ${reactions.length ? `<p class="detail reaction-line">Reaction: ${esc(reactions.join(", "))}</p>` : ""}
-            ${details.length ? `<p class="detail">${details.join(" · ")}</p>` : ""}
-          </li>`;
-        })
-        .join("")}</ul>`
-    : "";
-  return `<div class="log-summary"><div><p class="eyebrow">Our log</p><p>${summary}</p></div>${actions}</div>${history}`;
+  const queueButton =
+    food.age != null || queued
+      ? `<button type="button" class="btn" id="sheet-queue" data-action="queue" data-food="${food.id}" aria-pressed="${queued}">${ICON.bookmark}<span>${queued ? "On to-try list" : "To-try list"}</span></button>`
+      : "";
+  return `<footer class="sheet-foot">
+    <button type="button" class="btn btn-primary" data-action="log" data-food="${food.id}">${ICON.plus}<span id="sheet-log-label">${app.summaries.has(food.id) ? "Log another try" : "Log a try"}</span></button>
+    ${queueButton}
+  </footer>`;
+}
+
+// Redraw the parts of an open food page that depend on the log.
+function refreshSheetLog(food) {
+  const status = $("#sheet-status", sheet);
+  status.innerHTML = statusLineHTML(food);
+  status.hidden = !status.innerHTML.trim();
+  const history = $("#sheet-log", sheet);
+  history.innerHTML = historyHTML(food);
+  history.hidden = !history.innerHTML;
+  const label = $("#sheet-log-label", sheet);
+  if (label) label.textContent = app.summaries.has(food.id) ? "Log another try" : "Log a try";
+  const queue = $("#sheet-queue", sheet);
+  if (queue) {
+    const queued = !!app.state.queue[food.id];
+    queue.setAttribute("aria-pressed", String(queued));
+    $("span", queue).textContent = queued ? "On to-try list" : "To-try list";
+  }
 }
 
 function serveHTML(food) {
@@ -480,14 +577,17 @@ function renderSheet() {
     <div class="sheet-body">
       ${factsHTML(food)}
       ${food.wait ? `<div class="wait-box"><strong>${food.age == null ? "Avoid." : `Wait until ${esc(L.formatAgeRule(food).replace("From ", ""))}.`}</strong> ${esc(food.wait)}</div>` : ""}
-      <section class="log-panel" id="sheet-log" aria-label="Our log">${logPanelHTML(food)}</section>
+      <div class="log-status" id="sheet-status" aria-label="Our log"></div>
       ${serveHTML(food)}
       ${food.tips.length ? `<section><h3>Good to know</h3><ul class="tips">${food.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></section>` : ""}
+      <section id="sheet-log" aria-label="Our tries"></section>
       <div class="source-links">
         ${ssUrl ? `<a href="${ssUrl}" target="_blank" rel="noopener">Full guide on Solid Starts ↗</a>` : `<a href="${searchUrl}" target="_blank" rel="noopener">Search Solid Starts for ${esc(food.name.toLowerCase())} ↗</a>`}
       </div>
       <p class="disclaimer">General guidance only. Every baby is different; check with your pediatrician, especially about allergies.</p>
-    </div>`;
+    </div>
+    ${sheetFootHTML(food)}`;
+  refreshSheetLog(food);
 }
 
 function showSheet(id) {
@@ -551,12 +651,64 @@ function requestCloseLog() {
   else setLogDiscardBar(true);
 }
 
-function openLogDialog(foodId, logId) {
+function phoneOnlyNoteHTML() {
+  if (!phoneOnly() || app.cloud.status === "loading") return "";
+  return `<p class="form-note">${app.cloud.status === "signed-out" ? "You're signed out" : "Sync isn't connected"}, so this try will be saved on this phone only.</p>`;
+}
+
+// The quick way to log: one tap on a face saves today's try. Details open
+// the full form in the same dialog.
+function openQuickLog(foodId) {
+  if (!canWrite()) return;
+  const food = FOODS_BY_ID.get(foodId);
+  logDialog.innerHTML = `
+    <header class="sheet-head">
+      <div class="big-tile big-tile-small" data-cat="${food.cat}" aria-hidden="true">${iconHTML(food)}</div>
+      <div class="sheet-title"><p class="eyebrow">Log a try</p><h2 id="log-title" tabindex="-1">${esc(food.name)}</h2></div>
+      <button type="button" class="sheet-close" data-action="close-log" aria-label="Close">${ICON.close}</button>
+    </header>
+    <div class="form">
+      ${logWarningHTML(food)}
+      ${phoneOnlyNoteHTML()}
+      <fieldset class="field">
+        <legend>How did it go today?</legend>
+        <div class="face-row">
+          ${OUTCOMES.map((o) => `<button type="button" class="face-btn" data-action="quick-save" data-outcome="${o.id}"><svg class="face-icon" aria-hidden="true" focusable="false"><use href="#ic-${o.icon}"></use></svg><span>${esc(o.label)}</span></button>`).join("")}
+        </div>
+      </fieldset>
+      <div class="quick-more">
+        <button type="button" class="btn btn-small" data-action="log-details">Add date, notes or how it was served</button>
+        <button type="button" class="btn btn-small btn-danger" data-action="log-reaction">Noticed a reaction?</button>
+      </div>
+    </div>`;
+  logDialog.dataset.food = foodId;
+  logDialog.dataset.log = "";
+  logDialog.dataset.initial = logFormSnapshot();
+  if (!logDialog.open) logDialog.showModal();
+  $("#log-title", logDialog).focus();
+}
+
+async function quickSave(button) {
+  const foodId = logDialog.dataset.food;
+  const outcome = button.dataset.outcome;
+  const now = Date.now();
+  for (const b of logDialog.querySelectorAll(".face-btn")) b.disabled = true;
+  try {
+    await app.store.saveLog({ id: L.newId(), foodId, date: L.todayISO(), outcome, reactions: [], served: "", notes: "", createdAt: now, updatedAt: now });
+    logDialog.close();
+    toast(`Saved: ${FOODS_BY_ID.get(foodId).name}, ${OUTCOME_LABEL[outcome].toLowerCase()}`);
+  } catch (err) {
+    for (const b of logDialog.querySelectorAll(".face-btn")) b.disabled = false;
+    toast(describeStoreError(err));
+  }
+}
+
+function openLogDialog(foodId, logId, { reaction = false } = {}) {
   if (!canWrite()) return;
   const food = FOODS_BY_ID.get(foodId);
   const existing = logId ? app.state.logs[logId] : null;
   const log = existing || { date: L.todayISO(), outcome: "", reactions: [], served: "", notes: "" };
-  const hasReaction = (log.reactions || []).length > 0;
+  const hasReaction = reaction || (log.reactions || []).length > 0;
   logDialog.innerHTML = `
     <form class="log-form" id="log-form" novalidate>
       <header class="sheet-head">
@@ -566,7 +718,7 @@ function openLogDialog(foodId, logId) {
       </header>
       <div class="form">
         ${existing ? "" : logWarningHTML(food)}
-        ${phoneOnly() && app.cloud.status !== "loading" ? `<p class="form-note">${app.cloud.status === "signed-out" ? "You're signed out" : "Sync isn't connected"}, so this try will be saved on this phone only.</p>` : ""}
+        ${phoneOnlyNoteHTML()}
         <div class="field">
           <label for="log-date">Date</label>
           <input class="input" type="date" id="log-date" name="date" required max="${L.todayISO()}" value="${esc(log.date)}">
@@ -613,7 +765,7 @@ function openLogDialog(foodId, logId) {
   logDialog.dataset.food = foodId;
   logDialog.dataset.log = existing ? existing.id : "";
   logDialog.dataset.initial = logFormSnapshot();
-  logDialog.showModal();
+  if (!logDialog.open) logDialog.showModal();
   $("#log-title", logDialog).focus();
 }
 
@@ -1184,15 +1336,11 @@ function refresh() {
   if (app.view === "foods") {
     const notices = $("#status-notices");
     if (notices) notices.innerHTML = statusNoticesHTML();
-    const ready = $("#ready-option");
-    if (ready) ready.textContent = readyFilterLabel();
     renderFoodResults();
+    if (filterSheet.open) updateFilterDone();
   } else if (app.view === "progress") renderProgress();
   else if (app.view === "setup") refreshSetup();
-  if (app.openFoodId && sheet.open) {
-    const panel = $("#sheet-log");
-    if (panel) panel.innerHTML = logPanelHTML(FOODS_BY_ID.get(app.openFoodId));
-  }
+  if (app.openFoodId && sheet.open) refreshSheetLog(FOODS_BY_ID.get(app.openFoodId));
 }
 
 // Resolve the people named on shared log entries.
@@ -1248,7 +1396,32 @@ document.addEventListener("click", (e) => {
   }
   switch (t.dataset.action) {
     case "log":
-      openLogDialog(t.dataset.food);
+      openQuickLog(t.dataset.food);
+      break;
+    case "quick-save":
+      quickSave(t);
+      break;
+    case "log-details":
+      openLogDialog(logDialog.dataset.food);
+      break;
+    case "log-reaction":
+      openLogDialog(logDialog.dataset.food, null, { reaction: true });
+      break;
+    case "open-filters":
+      openFilters();
+      break;
+    case "close-filters":
+      filterSheet.close();
+      break;
+    case "reset-filters":
+      for (const key of FILTER_KEYS) app.filters[key] = "all";
+      renderFilterSheet();
+      renderFoodResults();
+      break;
+    case "clear-filter":
+      app.filters[t.dataset.key] = "all";
+      renderFoodResults();
+      ($("#active-filters button") || $("#filter-btn")).focus();
       break;
     case "edit-log":
       openLogDialog(t.dataset.food, t.dataset.log);
@@ -1337,28 +1510,26 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   const t = e.target;
-  if (t.id === "filter-cat") app.filters.cat = t.value;
-  else if (t.id === "filter-allergen") app.filters.allergen = t.value;
-  else if (t.id === "filter-flag") app.filters.flag = t.value;
-  else if (t.id === "sort") app.filters.sort = t.value;
-  else if (t.dataset.profile) return saveProfileField(t);
-  else if (t.id === "device-name") {
+  if (t.name && t.name.startsWith("f-")) {
+    app.filters[t.name.slice(2)] = t.value;
+    renderFoodResults();
+    updateFilterDone();
+    return;
+  }
+  if (t.dataset.profile) {
+    saveProfileField(t);
+  } else if (t.id === "device-name") {
     setDeviceName(t.value.trim());
     toast("Saved");
-    return;
   } else if (t.id === "log-has-reaction") {
     $("#reaction-list", logDialog).hidden = !t.checked;
-    return;
   } else if (t.id === "import-file") {
     const file = t.files && t.files[0];
     if (file) importFile(file);
     t.value = "";
-    return;
-  } else {
-    if (t.form && t.form.id === "log-form") $("#log-error", logDialog).hidden = true;
-    return;
+  } else if (t.form && t.form.id === "log-form") {
+    $("#log-error", logDialog).hidden = true;
   }
-  renderFoodResults();
 });
 
 document.addEventListener("submit", (e) => {
@@ -1389,6 +1560,10 @@ logDialog.addEventListener("cancel", (e) => {
 
 logDialog.addEventListener("click", (e) => {
   if (e.target === logDialog) requestCloseLog();
+});
+
+filterSheet.addEventListener("click", (e) => {
+  if (e.target === filterSheet) filterSheet.close();
 });
 
 window.addEventListener("hashchange", route);
