@@ -1,18 +1,19 @@
 // Shared vocabularies for the food guide. Keep ids stable: tracked logs
 // reference food ids, and filters reference these ids.
 
+// `short` labels the category jump bar on the Foods tab.
 export const CATEGORIES = [
-  { id: "fruit", label: "Fruits" },
-  { id: "veg", label: "Vegetables" },
-  { id: "grain", label: "Grains & starches" },
-  { id: "legume", label: "Beans, lentils & soy" },
-  { id: "meat", label: "Meat & poultry" },
-  { id: "fish", label: "Fish & seafood" },
-  { id: "dairy", label: "Eggs & dairy" },
-  { id: "nuts", label: "Nuts & seeds" },
-  { id: "herbs", label: "Herbs & spices" },
-  { id: "pantry", label: "Oils, sauces & extras" },
-  { id: "drinks", label: "Drinks" },
+  { id: "fruit", label: "Fruits", short: "Fruits" },
+  { id: "veg", label: "Vegetables", short: "Veg" },
+  { id: "grain", label: "Grains & starches", short: "Grains" },
+  { id: "legume", label: "Beans, lentils & soy", short: "Beans" },
+  { id: "meat", label: "Meat & poultry", short: "Meat" },
+  { id: "fish", label: "Fish & seafood", short: "Fish" },
+  { id: "dairy", label: "Eggs & dairy", short: "Eggs & dairy" },
+  { id: "nuts", label: "Nuts & seeds", short: "Nuts" },
+  { id: "herbs", label: "Herbs & spices", short: "Herbs" },
+  { id: "pantry", label: "Oils, sauces & extras", short: "Extras" },
+  { id: "drinks", label: "Drinks", short: "Drinks" },
 ];
 
 // The nine most common food allergens (US FDA list; the UK/EU list adds
@@ -42,6 +43,22 @@ export const ALLERGEN_STARTERS = {
   shellfish: "finely chopped cooked shrimp or flaked crab",
 };
 
+// The food to suggest for a first taste of each allergen.
+export const ALLERGEN_FIRST_FOOD = {
+  milk: "yogurt",
+  egg: "eggs",
+  peanut: "peanut-butter",
+  treenut: "almond",
+  sesame: "sesame",
+  soy: "tofu",
+  wheat: "pasta",
+  fish: "salmon",
+  shellfish: "shrimp",
+};
+
+// Iron-rich foods to suggest, best first.
+export const IRON_STARTERS = ["infant-cereal", "ground-beef", "lentil", "eggs", "chicken", "tofu", "black-beans", "sardines", "lamb", "chickpea", "turkey"];
+
 // Serving stages. `from` is inclusive, in months of age.
 export const STAGES = [
   { id: "6", label: "6–8 months", short: "6–8 mo", from: 6 },
@@ -63,6 +80,9 @@ export const OUTCOMES = [
   { id: "disliked", label: "Didn't like it", tone: "meh", icon: "confounded-face" },
   { id: "refused", label: "Wouldn't try", tone: "meh", icon: "zipper-mouth-face" },
 ];
+
+// Quick picks for "How was it served?" on the log form.
+export const SERVED_STYLES = ["Strips or spears", "Mashed", "Puréed", "Pre-loaded spoon", "Small pieces", "Mixed into a meal"];
 
 export const REACTIONS = [
   { id: "rash", label: "Rash or hives" },

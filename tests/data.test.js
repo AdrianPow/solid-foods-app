@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FOODS } from "../js/data/index.js";
-import { ALLERGENS, ALLERGEN_STARTERS, CATEGORIES, CHOKING, OUTCOMES } from "../js/data/meta.js";
+import { ALLERGENS, ALLERGEN_FIRST_FOOD, ALLERGEN_STARTERS, CATEGORIES, CHOKING, IRON_STARTERS, OUTCOMES } from "../js/data/meta.js";
 import { GUIDE } from "../js/data/guide.js";
 import { ICONS } from "../js/data/icons.js";
 import { FOOD_ICONS } from "../js/data/food-icons.js";
@@ -59,6 +59,16 @@ test("every allergen has at least one food that can be offered at 6 months", () 
   for (const a of ALLERGENS) {
     assert.ok(FOODS.some((f) => f.allergens.includes(a.id) && f.age === 6), a.id);
   }
+});
+
+test("suggested first foods carry their allergen, and iron starters are iron-rich", () => {
+  const byId = new Map(FOODS.map((f) => [f.id, f]));
+  for (const a of ALLERGENS) {
+    const food = byId.get(ALLERGEN_FIRST_FOOD[a.id]);
+    assert.ok(food && food.allergens.includes(a.id) && food.age === 6, a.id);
+  }
+  for (const id of IRON_STARTERS) assert.ok(byId.get(id)?.iron && byId.get(id).age === 6, id);
+  for (const c of CATEGORIES) assert.ok(c.short, c.id);
 });
 
 test("every outcome has a face icon", () => {

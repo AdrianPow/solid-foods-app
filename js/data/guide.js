@@ -1,5 +1,6 @@
 // General starting-solids guidance shown on the Guide tab.
-// Each section: { id, title, intro, items?: [{ title?, text }], note? }
+// Each section: { id, title, intro, items?: [{ id?, title?, text }], note? }
+// The readiness items have ids: they're a checklist the family can tick.
 
 export const GUIDE = [
   {
@@ -8,10 +9,10 @@ export const GUIDE = [
     intro:
       "Most babies are ready for solids around 6 months. Age alone is not the signal; look for all of these signs together.",
     items: [
-      { title: "Sits with little or no support", text: "Baby can sit upright in a high chair and hold their head steady." },
-      { title: "Brings things to their mouth", text: "Grabs toys or food and gets them to their mouth on purpose." },
-      { title: "Tongue-thrust reflex has faded", text: "Food put in the mouth is not automatically pushed back out." },
-      { title: "Shows interest", text: "Watches you eat, leans toward food, or opens their mouth when food comes close." },
+      { id: "sits", title: "Sits with little or no support", text: "Baby can sit upright in a high chair and hold their head steady." },
+      { id: "mouth", title: "Brings things to their mouth", text: "Grabs toys or food and gets them to their mouth on purpose." },
+      { id: "tongue", title: "Tongue-thrust reflex has faded", text: "Food put in the mouth is not automatically pushed back out." },
+      { id: "interest", title: "Shows interest", text: "Watches you eat, leans toward food, or opens their mouth when food comes close." },
     ],
     note: "Babies born early, or with feeding or developmental concerns, may need a different timeline. Check with your pediatrician.",
   },

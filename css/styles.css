@@ -49,6 +49,11 @@
   --gutter-r: max(16px, env(safe-area-inset-right, 0px));
   --tabbar-h: 64px;
   --maxw: 1120px;
+  /* Where the Foods search bar sticks: under the header on wide screens,
+     at the top on phones, where the header scrolls away. */
+  --topbar-h: 57px;
+  --sticky-top: calc(env(safe-area-inset-top, 0px) + var(--topbar-h));
+  --search-bar-h: 64px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -264,14 +269,6 @@ button {
 .brand-tile {
   width: 34px;
   height: 34px;
-  border-radius: 7px;
-  background: var(--pea);
-  color: var(--pea-ink);
-  display: grid;
-  place-items: center;
-  font-family: var(--font-display);
-  font-weight: 800;
-  font-size: 1rem;
   flex: none;
 }
 
@@ -369,6 +366,14 @@ button {
     margin-left: auto;
   }
 
+  .topbar {
+    position: relative;
+  }
+
+  :root {
+    --sticky-top: env(safe-area-inset-top, 0px);
+  }
+
   main {
     padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 24px) !important;
   }
@@ -395,6 +400,16 @@ main {
 
 .page-head h1 {
   font-size: var(--step-3);
+}
+
+@media (max-width: 759px) {
+  .page-head {
+    margin-bottom: 12px;
+  }
+
+  .page-head h1 {
+    font-size: 1.75rem;
+  }
 }
 
 .page-head p {
@@ -493,8 +508,167 @@ main {
   margin-bottom: 8px;
 }
 
+/* Search stays at the top while the list scrolls; the category bar sticks
+   just under it. Both span the full width so tiles don't peek past them. */
+.search-bar,
+.cat-jump {
+  position: sticky;
+  margin-inline: calc(-1 * var(--gutter-l)) calc(-1 * var(--gutter-r));
+  padding-left: var(--gutter-l);
+  padding-right: var(--gutter-r);
+  background: var(--paper);
+}
+
+.search-bar {
+  top: var(--sticky-top);
+  z-index: 6;
+  padding-block: 8px;
+  margin-bottom: 2px;
+}
+
+.cat-jump {
+  top: calc(var(--sticky-top) + var(--search-bar-h));
+  z-index: 5;
+  padding-block: 2px 8px;
+  margin-bottom: 4px;
+}
+
+.search-bar.is-stuck,
+.cat-jump.is-stuck {
+  box-shadow: 0 1px 0 var(--line), 0 6px 12px -8px rgb(28 37 27 / 0.25);
+}
+
+.cat-jump .chip[aria-current="true"] {
+  background: var(--pea);
+  border-color: var(--pea);
+  color: var(--pea-ink);
+}
+
+.group {
+  scroll-margin-top: calc(var(--sticky-top) + var(--search-bar-h) + 66px);
+}
+
+.search-clear {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-2);
+  display: grid;
+  place-items: center;
+}
+
+.search-clear::before {
+  content: "";
+  position: absolute;
+  inset: 9px;
+  border-radius: 50%;
+  background: var(--sunk);
+}
+
+.search .search-clear svg {
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  stroke-width: 2.6;
+}
+
+.search input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+.filter-btn svg[viewBox] path[d^="M12 19"] {
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+/* What's next: getting ready, or ideas for the next foods to offer. */
+.next-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+}
+
+.next-card h2 {
+  font-size: var(--step-1);
+}
+
+.next-card .btn {
+  justify-self: start;
+}
+
+.next-list,
+.ready-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.next-item {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 8px;
+  margin-inline: -8px;
+  border-radius: 10px;
+}
+
+.next-item:hover {
+  background: var(--sunk);
+}
+
+.next-item:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 0;
+}
+
+.next-item .mini-tile {
+  width: 44px;
+  height: 44px;
+}
+
+.next-item .sub,
+.ready-list .sub {
+  display: block;
+  font-size: var(--step--1);
+  color: var(--ink-2);
+}
+
+.ready-list .check {
+  align-items: flex-start;
+  padding: 6px 0;
+}
+
+.ready-list .check input {
+  margin-top: 3px;
+}
+
 .search {
   position: relative;
+  flex: 1;
+  min-width: 0;
 }
 
 .search svg {
@@ -512,9 +686,11 @@ main {
 }
 
 .search input {
+  -webkit-appearance: none;
+  appearance: none;
   width: 100%;
   min-height: 48px;
-  padding: 0 16px 0 44px;
+  padding: 0 48px 0 44px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--card);
@@ -973,14 +1149,92 @@ main {
 
 @media (prefers-reduced-motion: no-preference) {
   .sheet[open] {
-    animation: sheet-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    animation: sheet-up 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
-  @keyframes sheet-in {
-    from {
-      transform: translateY(24px);
-      opacity: 0.6;
+  .sheet[open]::backdrop {
+    animation: fade-in 220ms ease-out;
+  }
+
+  @media (min-width: 760px) {
+    .sheet[open] {
+      animation: sheet-pop 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
     }
+  }
+
+  @keyframes sheet-up {
+    from {
+      transform: translateY(100%);
+    }
+  }
+
+  @keyframes sheet-pop {
+    from {
+      transform: translateY(16px) scale(0.98);
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  /* A just-logged food's mark pops. */
+  .tile-check.pop svg,
+  .status-pill.pop {
+    animation: pop 460ms cubic-bezier(0.2, 1.6, 0.4, 1);
+  }
+
+  @keyframes pop {
+    0% {
+      transform: scale(0.5);
+    }
+    60% {
+      transform: scale(1.15);
+    }
+  }
+
+  .is-loading .tile-check svg {
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    50% {
+      opacity: 0.35;
+    }
+  }
+
+  .skeleton {
+    animation: shimmer 1.4s linear infinite;
+  }
+
+  @keyframes shimmer {
+    to {
+      background-position: -200% 0;
+    }
+  }
+}
+
+/* Placeholders while the shared log loads. */
+.skeleton {
+  display: block;
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--sunk) 25%, var(--line) 50%, var(--sunk) 75%);
+  background-size: 200% 100%;
+}
+
+.skeleton-line {
+  display: inline-block;
+  width: 9rem;
+  height: 14px;
+  vertical-align: middle;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-loading .tile-check svg {
+    opacity: 0.4;
   }
 }
 
@@ -994,6 +1248,21 @@ main {
   padding: 18px 20px 14px;
   background: var(--card);
   border-bottom: 1px solid var(--line);
+}
+
+/* A grab handle hints that sheets can be dragged down to close. */
+@media (max-width: 759px) {
+  .sheet-head::before {
+    content: "";
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: var(--line);
+  }
 }
 
 .sheet-head h2 {
@@ -1119,6 +1388,14 @@ main {
   padding: 14px 16px;
   border-radius: var(--radius);
   background: var(--meh-soft);
+}
+
+.wait-box.is-avoid {
+  background: var(--bad-soft);
+}
+
+.wait-box.is-avoid strong {
+  color: var(--bad);
 }
 
 .wait-box strong {
@@ -1581,20 +1858,63 @@ fieldset {
   gap: 6px 12px;
 }
 
-.hero-count {
+/* Foods tried: a ring for the goal, with the status counts beside it. */
+.hero {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 12px;
+  align-items: center;
+  gap: 16px 24px;
 }
 
-.hero-count .big {
+.ring-wrap {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  flex: none;
+}
+
+.ring {
+  width: 100%;
+  height: 100%;
+}
+
+.ring-track {
+  fill: none;
+  stroke: var(--sunk);
+  stroke-width: 12;
+}
+
+.ring-fill {
+  fill: none;
+  stroke: var(--pea);
+  stroke-width: 12;
+  stroke-linecap: round;
+}
+
+.ring-label {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  line-height: 1.1;
+  font-size: var(--step--1);
+  color: var(--ink-2);
+}
+
+.ring-label .big {
   font-family: var(--font-display);
   font-weight: 800;
-  font-size: var(--step-4);
+  font-size: 2.5rem;
   line-height: 1;
   letter-spacing: -0.03em;
+  color: var(--ink);
   font-variant-numeric: tabular-nums;
+}
+
+.goal-note {
+  font-weight: 700;
+  color: var(--good);
 }
 
 .meter {
@@ -1612,23 +1932,31 @@ fieldset {
   background: var(--pea);
 }
 
-.stat-row {
+.stat-grid {
+  flex: 1 1 160px;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
   gap: 8px;
 }
 
 .stat {
-  padding: 10px 12px;
-  border-radius: 8px;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 10px;
   background: var(--sunk);
 }
 
+.stat svg {
+  width: 22px;
+  height: 22px;
+}
+
 .stat b {
-  display: block;
   font-family: var(--font-display);
-  font-size: var(--step-2);
-  line-height: 1.1;
+  font-size: var(--step-1);
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1637,60 +1965,82 @@ fieldset {
   color: var(--ink-2);
 }
 
-.allergen-list {
+/* Allergens as a 3 by 3 grid of cells colored by state. */
+.allergen-grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
-.allergen-list button {
+.al-cell {
   all: unset;
   box-sizing: border-box;
   cursor: pointer;
   width: 100%;
+  min-height: 76px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 4px 12px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  background: var(--sunk);
+  align-content: start;
+  gap: 2px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
 }
 
-.allergen-list button:hover {
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-
-.allergen-list button:focus-visible {
+.al-cell:focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 
-.allergen-list .name {
+.al-name {
+  font-weight: 700;
+  font-size: var(--step--1);
+  color: var(--ink);
+}
+
+.al-state {
+  font-size: 0.75rem;
   font-weight: 700;
 }
 
-.allergen-list .sub {
-  grid-column: 1 / -1;
+.al-sub {
+  font-size: 0.75rem;
+  color: var(--ink-2);
+}
+
+.al-cell.state-new { background: var(--card); border-color: var(--line); }
+.al-cell.state-new .al-state { color: var(--ink-3); }
+.al-cell.state-ok { background: var(--good-soft); }
+.al-cell.state-ok .al-state { color: var(--good); }
+.al-cell.state-due { background: var(--meh-soft); }
+.al-cell.state-due .al-state { color: var(--meh); }
+.al-cell.state-reaction { background: var(--bad-soft); }
+.al-cell.state-reaction .al-state { color: var(--bad); }
+
+.al-ideas summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 700;
+  font-size: var(--step--1);
+  color: var(--pea);
+}
+
+.al-ideas ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 6px;
   font-size: var(--step--1);
   color: var(--ink-2);
 }
 
-
-.state {
-  font-size: var(--step--1);
-  font-weight: 700;
-  padding: 2px 10px;
-  border-radius: 999px;
-  white-space: nowrap;
+.al-ideas strong {
+  color: var(--ink);
 }
-
-.state-new { background: var(--card); color: var(--ink-2); border: 1px solid var(--line); }
-.state-ok { background: var(--good-soft); color: var(--good); }
-.state-due { background: var(--meh-soft); color: var(--meh); }
-.state-reaction { background: var(--bad-soft); color: var(--bad); }
 
 .bars {
   display: grid;
@@ -1721,9 +2071,26 @@ fieldset {
   display: grid;
 }
 
+.day-head {
+  margin: 14px 0 2px;
+  font-size: var(--step--1);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+}
+
+.day-head:first-child {
+  margin-top: 0;
+}
+
+.activity .sub.has-reaction {
+  color: var(--bad);
+  font-weight: 700;
+}
+
 .activity li {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
   align-items: center;
   padding: 10px 0;
@@ -1796,12 +2163,6 @@ fieldset {
   overflow-wrap: anywhere;
 }
 
-.activity .date {
-  font-size: var(--step--1);
-  color: var(--ink-3);
-  white-space: nowrap;
-}
-
 .queue-list {
   display: flex;
   flex-wrap: wrap;
@@ -1849,6 +2210,13 @@ fieldset {
   }
 }
 
+/* On phones the folded section titles are the contents list. */
+@media (max-width: 899px) {
+  .toc {
+    display: none;
+  }
+}
+
 .toc ol {
   list-style: none;
   margin: 0;
@@ -1890,22 +2258,66 @@ fieldset {
 
 .guide-sections {
   display: grid;
-  gap: 28px;
+  gap: 8px;
 }
 
 .guide-section {
-  display: grid;
-  gap: 12px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
   scroll-margin-top: calc(env(safe-area-inset-top, 0px) + 80px);
 }
 
-.guide-section h2 {
-  font-size: var(--step-2);
+.guide-section summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+  padding: 10px 16px;
+  cursor: pointer;
+  list-style: none;
 }
 
-.guide-section > p {
+.guide-section summary::-webkit-details-marker {
+  display: none;
+}
+
+.guide-section summary h2 {
+  font-size: var(--step-1);
+}
+
+.guide-section .chev {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 160ms ease;
+}
+
+.guide-section[open] .chev {
+  transform: rotate(180deg);
+}
+
+.guide-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 16px 18px;
+}
+
+.guide-body > p {
   max-width: 65ch;
   font-size: 1.0625rem;
+}
+
+.guide-body .ready-list .check {
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--sunk);
 }
 
 .guide-items {
@@ -1920,8 +2332,8 @@ fieldset {
 .guide-items li {
   padding: 14px 16px;
   border-radius: 10px;
-  background: var(--card);
-  border: 1px solid var(--line);
+  background: var(--sunk);
+  border: 1px solid transparent;
 }
 
 .guide-items li strong {
@@ -2006,7 +2418,23 @@ fieldset {
 }
 
 /* ---------- toast ---------- */
+.toast-action {
+  flex: none;
+  min-height: 44px;
+  margin: -12px -8px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .toast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
   position: fixed;
   inset: auto;
   margin: 0;
@@ -2015,6 +2443,7 @@ fieldset {
   bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 16px);
   transform: translateX(-50%);
   z-index: 50;
+  width: max-content;
   max-width: calc(100% - 32px);
   padding: 12px 18px;
   border-radius: 10px;

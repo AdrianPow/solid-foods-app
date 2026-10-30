@@ -5,7 +5,7 @@
 // when offline. Google Fonts come from the cache once downloaded. Everything
 // else (Firebase sync traffic, links out) is left alone: caching those would
 // serve stale data.
-const CACHE = "first-bites-v6";
+const CACHE = "first-bites-v7";
 const SHELL = [
   "./",
   "index.html",

@@ -1,5 +1,5 @@
 import { FOODS, FOODS_BY_ID } from "./data/index.js";
-import { ALLERGENS, ALLERGEN_DUE_DAYS, ALLERGEN_STARTERS, CATEGORIES, CHOKING, DEFAULT_GOAL, OUTCOMES, REACTIONS, STAGES } from "./data/meta.js";
+import { ALLERGENS, ALLERGEN_DUE_DAYS, ALLERGEN_FIRST_FOOD, ALLERGEN_STARTERS, CATEGORIES, CHOKING, DEFAULT_GOAL, IRON_STARTERS, OUTCOMES, REACTIONS, SERVED_STYLES, STAGES } from "./data/meta.js";
 import { GUIDE } from "./data/guide.js";
 import { ICONS, ICON_VIEWBOX } from "./data/icons.js";
 import * as L from "./logic.js";
@@ -135,22 +135,56 @@ function whoLogged(log) {
 }
 
 // Shown as a popover where supported, so it sits above an open food page or
-// form instead of behind it.
+// form. It moves into the topmost open dialog, because everything outside a
+// modal dialog is inert and its Undo button couldn't be tapped there.
 let toastTimer;
-function toast(message) {
-  const el = $("#toast");
-  const popover = typeof el.showPopover === "function";
-  el.textContent = message;
-  el.hidden = false;
-  if (popover) {
-    if (el.matches(":popover-open")) el.hidePopover();
-    el.showPopover();
-  }
+let toastUndo = null;
+const toastEl = $("#toast");
+const canPopover = typeof toastEl.showPopover === "function";
+
+function showToastIn(host) {
+  if (canPopover && toastEl.matches(":popover-open")) toastEl.hidePopover();
+  if (toastEl.parentElement !== host) host.append(toastEl);
+  toastEl.hidden = false;
+  if (canPopover) toastEl.showPopover();
+}
+
+// Replace a dialog's content without losing a message shown inside it.
+function setDialogHTML(dialog, html) {
+  const keep = dialog.contains(toastEl) && !toastEl.hidden;
+  dialog.innerHTML = html;
+  if (keep) showToastIn(dialog);
+}
+
+function toastHost() {
+  const open = document.querySelectorAll("dialog[open]");
+  return open.length ? open[open.length - 1] : document.body;
+}
+
+function toast(message, { undo } = {}) {
+  toastUndo = undo || null;
+  toastEl.innerHTML = `<span>${esc(message)}</span>${undo ? '<button type="button" class="toast-action" data-action="undo">Undo</button>' : ""}`;
+  showToastIn(toastHost());
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    if (popover && el.matches(":popover-open")) el.hidePopover();
-    el.hidden = true;
-  }, 3200);
+  toastTimer = setTimeout(hideToast, undo ? 6000 : 3200);
+}
+
+function hideToast() {
+  if (canPopover && toastEl.matches(":popover-open")) toastEl.hidePopover();
+  toastEl.hidden = true;
+  toastUndo = null;
+}
+
+async function undoLast() {
+  const undo = toastUndo;
+  hideToast();
+  if (!undo) return;
+  try {
+    await undo();
+    toast("Undone");
+  } catch (err) {
+    toast(describeStoreError(err));
+  }
 }
 
 const ICON = {
@@ -158,6 +192,8 @@ const ICON = {
   plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
   search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
   filter: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>',
+  chevron: '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
+  up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
   bookmark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4h11v16l-5.5-4-5.5 4z"/></svg>',
   hazard: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5L21.5 20h-19z"/><path d="M12 10v4.5M12 17.4v.1"/></svg>',
 };
@@ -171,6 +207,14 @@ const MARK = {
 };
 const STATUS_SHORT = { liked: "Liked", learning: "Still learning", reaction: "Reaction" };
 
+// The food just logged: its mark pops when the tile redraws.
+let popTimer;
+function markLogged(foodId) {
+  app.popFood = foodId;
+  clearTimeout(popTimer);
+  popTimer = setTimeout(() => (app.popFood = null), 1200);
+}
+
 // ---------- chrome ----------
 
 function renderChrome() {
@@ -183,7 +227,7 @@ function renderChrome() {
   const months = babyMonths();
   const tried = app.summaries.size;
   if (name || months != null) {
-    chip.innerHTML = `<strong>${esc(name || "Baby")}</strong>${months != null ? `<span class="num">${esc(L.formatAge(months))}</span>` : ""}<span class="num muted">· ${tried} tried</span>`;
+    chip.innerHTML = `<strong>${esc(name || "Baby")}</strong>${months != null ? `<span class="num muted">· ${esc(L.formatAge(months))}</span>` : ""}`;
     chip.setAttribute("aria-label", `${name || "Baby"}: ${months != null ? L.formatAge(months) + ", " : ""}${tried} foods tried. Edit baby details.`);
   } else {
     chip.innerHTML = "<strong>Add baby</strong>";
@@ -267,31 +311,166 @@ function statusNoticesHTML() {
   return notices.join("");
 }
 
+// The search bar and category jump bar stay put while the list scrolls.
 function renderFoods() {
   main.innerHTML = `
     <div class="page-head">
       <div>
         <h1>Foods</h1>
-        <p class="muted">${FOODS.length} foods with age-by-age serving tips. Tap a tile for details, or its circle to log a try.</p>
+        <p class="muted" id="foods-intro"${app.summaries.size ? " hidden" : ""}>${FOODS.length} foods with age-by-age serving tips. Tap a tile for details, or its circle to log a try.</p>
       </div>
     </div>
     <div id="status-notices">${statusNoticesHTML()}</div>
     <div id="install-notice">${installNoticeHTML()}</div>
-    <div class="filters">
+    <div id="next-card">${nextCardHTML()}</div>
+    <div class="search-bar" id="search-bar">
       <div class="search-row">
-        <label class="search">
+        <div class="search">
           ${ICON.search}
-          <span class="visually-hidden">Search foods</span>
-          <input id="food-search" type="search" autocomplete="off" placeholder="Search foods, e.g. avocado" value="${esc(app.filters.q)}">
-        </label>
+          <label class="visually-hidden" for="food-search">Search foods</label>
+          <input id="food-search" type="search" autocomplete="off" enterkeyhint="search" placeholder="Search foods, e.g. avocado" value="${esc(app.filters.q)}">
+          <button type="button" class="search-clear" id="search-clear" data-action="clear-search" aria-label="Clear search"${app.filters.q ? "" : " hidden"}>${ICON.close}</button>
+        </div>
+        <button type="button" class="filter-btn" id="to-top" data-action="to-top" aria-label="Back to top" hidden>${ICON.up}</button>
         <button type="button" class="filter-btn" id="filter-btn" data-action="open-filters" aria-haspopup="dialog">${ICON.filter}<span class="filter-count" id="filter-count" hidden></span></button>
       </div>
+    </div>
+    <div class="filters">
       <div class="chip-row" id="status-chips" role="group" aria-label="Filter by what you've tried"></div>
       <div class="active-filters" id="active-filters" hidden></div>
     </div>
+    <nav class="cat-jump" id="cat-jump" aria-label="Jump to a category" hidden><div class="chip-row" id="cat-chips"></div></nav>
     <div id="food-results"></div>`;
   $("#status-chips").addEventListener("scroll", (e) => updateChipFade(e.currentTarget), { passive: true });
+  $("#cat-chips").addEventListener("scroll", (e) => updateChipFade(e.currentTarget), { passive: true });
   renderFoodResults();
+}
+
+// ---------- what's next ----------
+
+// Before solids: a countdown to 6 months and the readiness signs to tick.
+// After: a few ideas for what to offer next.
+function nextCardHTML() {
+  const months = babyMonths();
+  if (months == null || loading() || loadError()) return "";
+  if (months < 6 && !app.summaries.size) return startingSoonHTML(months);
+  const ideas = L.suggestNext({ foods: FOODS, summaries: app.summaries, queue: app.state.queue, months, firstFoods: ALLERGEN_FIRST_FOOD, ironStarters: IRON_STARTERS });
+  if (!ideas.length) return "";
+  const reason = (idea) => {
+    if (idea.kind === "due") return `${ALLERGEN_LABEL[idea.allergen]} last offered ${relDays(idea.daysSince)}. Offer it again to keep it in the diet.`;
+    if (idea.kind === "allergen") return `First taste of ${ALLERGEN_LABEL[idea.allergen].toLowerCase()}: ${ALLERGEN_STARTERS[idea.allergen]}.`;
+    if (idea.kind === "queued") return "On your to-try list.";
+    return "Iron-rich. Babies need extra iron from about 6 months.";
+  };
+  return `<section class="next-card" aria-labelledby="next-title">
+    <h2 id="next-title">Ideas for next</h2>
+    <ul class="next-list">${ideas
+      .map((idea) => {
+        const food = FOODS_BY_ID.get(idea.id);
+        return `<li><button type="button" class="next-item" data-open="${food.id}">
+          <span class="mini-tile" data-cat="${food.cat}" aria-hidden="true">${iconHTML(food)}</span>
+          <span><strong>${esc(food.name)}</strong><span class="sub">${esc(reason(idea))}</span></span>
+        </button></li>`;
+      })
+      .join("")}</ul>
+  </section>`;
+}
+
+function readySignsHTML({ details = false } = {}) {
+  const ticked = new Set(app.state.profile.readySigns || []);
+  const signs = GUIDE.find((g) => g.id === "ready").items;
+  return `<ul class="ready-list">${signs
+    .map((item) => `<li><label class="check"><input type="checkbox" data-ready-sign="${item.id}"${ticked.has(item.id) ? " checked" : ""}${canWrite() ? "" : " disabled"}><span><strong>${esc(item.title)}</strong>${details ? `<span class="sub">${esc(item.text)}</span>` : ""}</span></label></li>`)
+    .join("")}</ul>`;
+}
+
+function startingSoonHTML(months) {
+  const birth = app.state.profile.birthDate;
+  const [y, m, d] = birth.split("-").map(Number);
+  const sixMonths = L.toISODate(new Date(y, m - 1 + 6, d));
+  const days = L.daysBetween(L.todayISO(), sixMonths);
+  const when = days <= 0 ? "now" : days < 63 ? `in about ${plural(Math.max(1, Math.round(days / 7)), "week")}` : `in about ${plural(Math.round(days / 30.4), "month")}`;
+  const ticked = (app.state.profile.readySigns || []).length;
+  const total = GUIDE.find((g) => g.id === "ready").items.length;
+  return `<section class="next-card" aria-labelledby="next-title">
+    <h2 id="next-title">Getting ready for solids</h2>
+    <p>${esc(babyName() || "Your baby")} is ${esc(L.formatAgeLong(months))} old. Most babies are ready at about 6 months: <strong>${esc(when)}</strong> (${esc(fmtDate(sixMonths))}).</p>
+    <p class="muted">Look for all four signs together. <span class="num" data-ready-count>${ticked} of ${total}</span> ticked so far.</p>
+    ${readySignsHTML()}
+    <a class="btn btn-small" href="#guide">Read the guide together</a>
+  </section>`;
+}
+
+async function toggleReadySign(input) {
+  const signs = new Set(app.state.profile.readySigns || []);
+  if (input.checked) signs.add(input.dataset.readySign);
+  else signs.delete(input.dataset.readySign);
+  try {
+    await app.store.setProfile({ readySigns: [...signs] });
+  } catch (err) {
+    input.checked = !input.checked;
+    toast(describeStoreError(err));
+  }
+}
+
+// ---------- scrolling helpers ----------
+
+// Highlight the category in view, show Back to top, and shade the sticky bars
+// once the list is scrolling under them.
+function updateScrollUI() {
+  const toTop = $("#to-top");
+  if (!toTop) return;
+  toTop.hidden = scrollY < innerHeight * 1.5;
+  const bar = $("#search-bar");
+  const nav = $("#cat-jump");
+  const barBottom = bar.getBoundingClientRect().bottom;
+  const navRect = nav.getBoundingClientRect();
+  const navStuck = !nav.hidden && $("#food-results").getBoundingClientRect().top < navRect.bottom - 1;
+  bar.classList.toggle("is-stuck", !navStuck && $(".filters", main).getBoundingClientRect().top < barBottom - 1);
+  nav.classList.toggle("is-stuck", navStuck);
+  if (nav.hidden) return;
+  const line = navRect.bottom + 16;
+  let current = null;
+  for (const group of document.querySelectorAll(".group")) {
+    if (group.getBoundingClientRect().top > line) break;
+    current = group.dataset.cat;
+  }
+  current ||= document.querySelector(".group")?.dataset.cat;
+  for (const chip of nav.querySelectorAll(".chip")) {
+    const on = chip.dataset.group === current;
+    if (on && chip.getAttribute("aria-current") !== "true") {
+      // Leave room for the edge fade, so the current chip shows clearly.
+      const row = $("#cat-chips");
+      row.scrollTo({ left: chip.offsetLeft - row.offsetLeft - 56, behavior: smooth() });
+    }
+    if (on) chip.setAttribute("aria-current", "true");
+    else chip.removeAttribute("aria-current");
+  }
+}
+
+let scrollQueued = false;
+window.addEventListener(
+  "scroll",
+  () => {
+    if (scrollQueued || app.view !== "foods") return;
+    scrollQueued = true;
+    requestAnimationFrame(() => {
+      scrollQueued = false;
+      updateScrollUI();
+    });
+  },
+  { passive: true },
+);
+
+function renderCatJump(groups) {
+  const nav = $("#cat-jump");
+  nav.hidden = groups.length < 2;
+  $("#cat-chips").innerHTML = groups.map((g) => `<button type="button" class="chip" data-group="${g.id}">${esc(g.short)}</button>`).join("");
+  updateChipFade($("#cat-chips"));
+}
+
+function smooth() {
+  return matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
 }
 
 function renderStatusChips() {
@@ -348,7 +527,7 @@ function renderFilterBar() {
 }
 
 function renderFilterSheet() {
-  filterSheet.innerHTML = `
+  setDialogHTML(filterSheet, `
     <header class="sheet-head">
       <div class="sheet-title"><h2 id="filter-title" tabindex="-1">Filters</h2></div>
       <button type="button" class="sheet-close" data-action="close-filters" aria-label="Close">${ICON.close}</button>
@@ -368,7 +547,7 @@ function renderFilterSheet() {
         <button type="button" class="btn btn-quiet" data-action="reset-filters">Clear filters</button>
         <button type="button" class="btn btn-primary" data-action="close-filters" id="filter-done"></button>
       </div>
-    </footer>`;
+    </footer>`);
   updateFilterDone();
 }
 
@@ -410,7 +589,7 @@ function tileHTML(food) {
       ${iconHTML(food, "tile-icon")}
       <span class="tile-name">${esc(food.name)}${tags.length ? `<span class="tile-tags" aria-hidden="true">${tags.join("")}</span>` : ""}</span>
     </button>
-    ${canWrite() ? `<button type="button" class="tile-check" data-action="log" data-food="${food.id}" aria-label="${esc(markLabel)}">${mark}</button>` : `<span class="tile-check" aria-hidden="true">${mark}</span>`}
+    ${canWrite() ? `<button type="button" class="tile-check${app.popFood === food.id ? " pop" : ""}" data-action="log" data-food="${food.id}" aria-label="${esc(markLabel)}">${mark}</button>` : `<span class="tile-check" aria-hidden="true">${mark}</span>`}
   </div>`;
 }
 
@@ -440,22 +619,25 @@ function renderFoodResults() {
   const list = sortFoods(FOODS.filter((food) => matchesFilters(food)));
   const tried = list.filter((food) => app.summaries.has(food.id)).length;
   renderFilterBar();
-  const line = `<p class="result-line"><span class="num">${plural(list.length, "food")} · ${tried} tried</span>${loading() ? "<span>Loading your tracker…</span>" : legendHTML()}</p>`;
+  main.classList.toggle("is-loading", loading());
+  const line = `<p class="result-line"><span class="num">${plural(list.length, "food")} · ${tried} tried</span>${loading() ? '<span class="skeleton skeleton-line" role="status"><span class="visually-hidden">Loading your tracker…</span></span>' : legendHTML()}</p>`;
+  const groups = app.filters.sort === "category" ? CATEGORIES.map((c) => ({ ...c, foods: list.filter((food) => food.cat === c.id) })).filter((g) => g.foods.length) : [];
+  renderCatJump(groups);
+  requestAnimationFrame(updateScrollUI);
   if (!list.length) {
     box.innerHTML = `${line}<div class="empty"><strong>No foods match</strong>Try a different search, or clear the filters.<div style="margin-top:12px"><button type="button" class="btn btn-small" data-action="clear-filters">Clear filters</button></div></div>`;
     return;
   }
-  if (app.filters.sort !== "category") {
+  if (!groups.length) {
     box.innerHTML = `${line}<div class="grid">${list.map(tileHTML).join("")}</div>`;
     return;
   }
-  const groups = CATEGORIES.map((c) => ({ ...c, foods: list.filter((food) => food.cat === c.id) })).filter((g) => g.foods.length);
   box.innerHTML =
     line +
     groups
       .map((g) => {
         const gTried = g.foods.filter((food) => app.summaries.has(food.id)).length;
-        return `<section class="group" aria-labelledby="group-${g.id}">
+        return `<section class="group" data-cat="${g.id}" aria-labelledby="group-${g.id}">
           <div class="group-head"><h2 id="group-${g.id}">${esc(g.label)}</h2><span class="num">${gTried}/${g.foods.length} tried</span></div>
           <div class="grid">${g.foods.map(tileHTML).join("")}</div>
         </section>`;
@@ -479,9 +661,9 @@ function factsHTML(food) {
 // One line near the top of a food's page: how it's going so far.
 function statusLineHTML(food) {
   const s = app.summaries.get(food.id);
-  if (!s) return loading() ? "<p>Loading your log…</p>" : loadError() ? "<p>Your log didn't load.</p>" : "";
+  if (!s) return loading() ? '<span class="skeleton skeleton-line" role="status"><span class="visually-hidden">Loading your log…</span></span>' : loadError() ? "<p>Your log didn't load.</p>" : "";
   const pastReaction = s.status !== "reaction" && s.lastReactionDate;
-  return `<span class="status-pill st-${s.status}">${MARK[s.status]}${esc(STATUS_LABEL[s.status])}</span>
+  return `<span class="status-pill st-${s.status}${app.popFood === food.id ? " pop" : ""}">${MARK[s.status]}${esc(STATUS_LABEL[s.status])}</span>
     <span>Tried ${plural(s.count, "time")}, last on ${esc(fmtDate(s.lastDate))}</span>
     ${pastReaction ? `<span class="reaction-note">Reaction noted on ${esc(fmtDate(s.lastReactionDate))}</span>` : ""}`;
 }
@@ -527,6 +709,10 @@ function refreshSheetLog(food) {
   const history = $("#sheet-log", sheet);
   history.innerHTML = historyHTML(food);
   history.hidden = !history.innerHTML;
+  // A page opened before the log loaded has no log bar yet.
+  const foot = $(".sheet-foot", sheet);
+  if (!foot && canWrite()) sheet.insertAdjacentHTML("beforeend", sheetFootHTML(food));
+  else if (foot && !canWrite()) foot.remove();
   const label = $("#sheet-log-label", sheet);
   if (label) label.textContent = app.summaries.has(food.id) ? "Log another try" : "Log a try";
   const queue = $("#sheet-queue", sheet);
@@ -564,7 +750,7 @@ function renderSheet() {
   if (!food) return;
   const ssUrl = food.ss ? `https://solidstarts.com/foods/${encodeURIComponent(food.ss)}/` : null;
   const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(`site:solidstarts.com ${food.name} for babies`)}`;
-  sheet.innerHTML = `
+  setDialogHTML(sheet, `
     <header class="sheet-head">
       <div class="big-tile" data-cat="${food.cat}" aria-hidden="true">${iconHTML(food)}</div>
       <div class="sheet-title">
@@ -576,7 +762,7 @@ function renderSheet() {
     </header>
     <div class="sheet-body">
       ${factsHTML(food)}
-      ${food.wait ? `<div class="wait-box"><strong>${food.age == null ? "Avoid." : `Wait until ${esc(L.formatAgeRule(food).replace("From ", ""))}.`}</strong> ${esc(food.wait)}</div>` : ""}
+      ${food.wait ? `<div class="wait-box${food.age == null ? " is-avoid" : ""}"><strong>${food.age == null ? "Avoid." : `Wait until ${esc(L.formatAgeRule(food).replace("From ", ""))}.`}</strong> ${esc(food.wait)}</div>` : ""}
       <div class="log-status" id="sheet-status" aria-label="Our log"></div>
       ${serveHTML(food)}
       ${food.tips.length ? `<section><h3>Good to know</h3><ul class="tips">${food.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></section>` : ""}
@@ -586,7 +772,7 @@ function renderSheet() {
       </div>
       <p class="disclaimer">General guidance only. Every baby is different; check with your pediatrician, especially about allergies.</p>
     </div>
-    ${sheetFootHTML(food)}`;
+    ${sheetFootHTML(food)}`);
   refreshSheetLog(food);
 }
 
@@ -624,7 +810,7 @@ function closeFood() {
 function logWarningHTML(food) {
   if (food.age != null && !isWaiting(food)) return "";
   const reason = food.wait ? ` ${esc(food.wait)}` : "";
-  if (food.age == null) return `<div class="wait-box"><strong>${esc(food.name)} is best avoided for young children.</strong>${reason}</div>`;
+  if (food.age == null) return `<div class="wait-box is-avoid"><strong>${esc(food.name)} is best avoided for young children.</strong>${reason}</div>`;
   const months = babyMonths();
   const age = months != null ? ` ${esc(babyName() || "Your baby")} is ${esc(L.formatAgeLong(months))}.` : "";
   return `<div class="wait-box"><strong>${esc(food.name)} isn't recommended until ${esc(L.formatAgeRule(food).replace("From ", ""))}.</strong>${age}${reason}</div>`;
@@ -661,7 +847,7 @@ function phoneOnlyNoteHTML() {
 function openQuickLog(foodId) {
   if (!canWrite()) return;
   const food = FOODS_BY_ID.get(foodId);
-  logDialog.innerHTML = `
+  setDialogHTML(logDialog, `
     <header class="sheet-head">
       <div class="big-tile big-tile-small" data-cat="${food.cat}" aria-hidden="true">${iconHTML(food)}</div>
       <div class="sheet-title"><p class="eyebrow">Log a try</p><h2 id="log-title" tabindex="-1">${esc(food.name)}</h2></div>
@@ -680,7 +866,7 @@ function openQuickLog(foodId) {
         <button type="button" class="btn btn-small" data-action="log-details">Add date, notes or how it was served</button>
         <button type="button" class="btn btn-small btn-danger" data-action="log-reaction">Noticed a reaction?</button>
       </div>
-    </div>`;
+    </div>`);
   logDialog.dataset.food = foodId;
   logDialog.dataset.log = "";
   logDialog.dataset.initial = logFormSnapshot();
@@ -693,10 +879,12 @@ async function quickSave(button) {
   const outcome = button.dataset.outcome;
   const now = Date.now();
   for (const b of logDialog.querySelectorAll(".face-btn")) b.disabled = true;
+  const id = L.newId();
+  markLogged(foodId);
   try {
-    await app.store.saveLog({ id: L.newId(), foodId, date: L.todayISO(), outcome, reactions: [], served: "", notes: "", createdAt: now, updatedAt: now });
+    await app.store.saveLog({ id, foodId, date: L.todayISO(), outcome, reactions: [], served: "", notes: "", createdAt: now, updatedAt: now });
     logDialog.close();
-    toast(`Saved: ${FOODS_BY_ID.get(foodId).name}, ${OUTCOME_LABEL[outcome].toLowerCase()}`);
+    toast(`Saved: ${FOODS_BY_ID.get(foodId).name}, ${OUTCOME_LABEL[outcome].toLowerCase()}`, { undo: () => app.store.deleteLog(id) });
   } catch (err) {
     for (const b of logDialog.querySelectorAll(".face-btn")) b.disabled = false;
     toast(describeStoreError(err));
@@ -709,7 +897,9 @@ function openLogDialog(foodId, logId, { reaction = false } = {}) {
   const existing = logId ? app.state.logs[logId] : null;
   const log = existing || { date: L.todayISO(), outcome: "", reactions: [], served: "", notes: "" };
   const hasReaction = reaction || (log.reactions || []).length > 0;
-  logDialog.innerHTML = `
+  const when = log.date === L.todayISO() ? "today" : log.date === L.daysAgoISO(1) ? "yesterday" : "other";
+  const served = servedParts(log.served);
+  setDialogHTML(logDialog, `
     <form class="log-form" id="log-form" novalidate>
       <header class="sheet-head">
         <div class="big-tile big-tile-small" data-cat="${food.cat}" aria-hidden="true">${iconHTML(food)}</div>
@@ -719,10 +909,14 @@ function openLogDialog(foodId, logId, { reaction = false } = {}) {
       <div class="form">
         ${existing ? "" : logWarningHTML(food)}
         ${phoneOnlyNoteHTML()}
-        <div class="field">
-          <label for="log-date">Date</label>
-          <input class="input" type="date" id="log-date" name="date" required max="${L.todayISO()}" value="${esc(log.date)}">
-        </div>
+        <fieldset class="field">
+          <legend>When?</legend>
+          <div class="choice-row">
+            ${[["today", "Today"], ["yesterday", "Yesterday"], ["other", "Another day"]].map(([id, label]) => `<button type="button" class="chip" data-action="log-date" data-when="${id}" aria-pressed="${when === id}">${label}</button>`).join("")}
+          </div>
+          <label class="visually-hidden" for="log-date">Date of this try</label>
+          <input class="input" type="date" id="log-date" name="date" required max="${L.todayISO()}" value="${esc(log.date)}"${when === "other" ? "" : " hidden"}>
+        </fieldset>
         <fieldset class="field">
           <legend>How did it go?</legend>
           <div class="choice-row">
@@ -731,6 +925,9 @@ function openLogDialog(foodId, logId, { reaction = false } = {}) {
         </fieldset>
         <div class="field">
           <label for="log-served">How was it served? <span class="muted">(optional)</span></label>
+          <div class="choice-row">
+            ${SERVED_STYLES.map((style) => `<button type="button" class="chip" data-action="served-pick" data-text="${esc(style.toLowerCase())}" aria-pressed="${served.includes(style.toLowerCase())}">${esc(style)}</button>`).join("")}
+          </div>
           <input class="input" id="log-served" name="served" maxlength="300" value="${esc(log.served)}" placeholder="e.g. steamed spears, mashed, on toast">
         </div>
         <fieldset class="field">
@@ -761,12 +958,54 @@ function openLogDialog(foodId, logId, { reaction = false } = {}) {
           </div>
         </div>
       </footer>
-    </form>`;
+    </form>`);
   logDialog.dataset.food = foodId;
   logDialog.dataset.log = existing ? existing.id : "";
   logDialog.dataset.initial = logFormSnapshot();
   if (!logDialog.open) logDialog.showModal();
   $("#log-title", logDialog).focus();
+}
+
+// Date buttons: Today and Yesterday fill the date in; Another day shows the
+// date picker.
+function setLogDate(when) {
+  const input = $("#log-date", logDialog);
+  if (when === "today") input.value = L.todayISO();
+  else if (when === "yesterday") input.value = L.daysAgoISO(1);
+  input.hidden = when !== "other";
+  for (const b of logDialog.querySelectorAll('[data-action="log-date"]')) b.setAttribute("aria-pressed", String(b.dataset.when === when));
+  $("#log-error", logDialog).hidden = true;
+  if (when === "other") {
+    input.focus();
+    try {
+      input.showPicker();
+    } catch {
+      // Not supported, or not allowed here: the field is focused instead.
+    }
+  }
+}
+
+function servedParts(text) {
+  return String(text || "")
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+// A served quick pick adds its words to the text box, or takes them out.
+function toggleServed(button) {
+  const input = $("#log-served", logDialog);
+  const parts = String(input.value).split(",").map((part) => part.trim()).filter(Boolean);
+  const at = parts.findIndex((part) => part.toLowerCase() === button.dataset.text);
+  if (at >= 0) parts.splice(at, 1);
+  else parts.push(button.dataset.text);
+  input.value = parts.join(", ");
+  updateServedPicks();
+}
+
+function updateServedPicks() {
+  const served = servedParts($("#log-served", logDialog).value);
+  for (const b of logDialog.querySelectorAll('[data-action="served-pick"]')) b.setAttribute("aria-pressed", String(served.includes(b.dataset.text)));
 }
 
 // Show the error in the pinned footer and bring the field to fix into view.
@@ -809,11 +1048,14 @@ async function submitLog(form) {
   };
   const submit = form.querySelector('[type="submit"]');
   submit.disabled = true;
+  markLogged(foodId);
   try {
     await app.store.saveLog(log);
     logDialog.close();
     const food = FOODS_BY_ID.get(foodId);
-    toast(reactions.length ? `Saved ${food.name} with a reaction noted` : `Saved: ${food.name}, ${OUTCOME_LABEL[outcome].toLowerCase()}`);
+    toast(reactions.length ? `Saved ${food.name} with a reaction noted` : `Saved: ${food.name}, ${OUTCOME_LABEL[outcome].toLowerCase()}`, {
+      undo: existing ? () => app.store.saveLog(existing) : () => app.store.deleteLog(log.id),
+    });
   } catch (err) {
     showLogError(describeStoreError(err));
   } finally {
@@ -821,25 +1063,13 @@ async function submitLog(form) {
   }
 }
 
-let deleteArmed = null;
 async function deleteLog(button) {
-  const id = button.dataset.log;
-  if (deleteArmed !== id) {
-    deleteArmed = id;
-    button.textContent = "Tap again to delete";
-    setTimeout(() => {
-      if (deleteArmed === id) {
-        deleteArmed = null;
-        if (button.isConnected) button.textContent = "Delete";
-      }
-    }, 4000);
-    return;
-  }
-  deleteArmed = null;
+  const log = app.state.logs[button.dataset.log];
+  if (!log) return;
   try {
-    await app.store.deleteLog(id);
+    await app.store.deleteLog(log.id);
     logDialog.close();
-    toast("Deleted that try");
+    toast("Deleted that try", { undo: () => app.store.saveLog(log) });
   } catch (err) {
     showLogError(describeStoreError(err));
   }
@@ -849,7 +1079,7 @@ async function toggleQueue(foodId) {
   const on = !app.state.queue[foodId];
   try {
     await app.store.setQueued(foodId, on);
-    toast(on ? `Added ${FOODS_BY_ID.get(foodId).name} to your to-try list` : "Removed from your to-try list");
+    toast(on ? `Added ${FOODS_BY_ID.get(foodId).name} to your to-try list` : "Removed from your to-try list", { undo: () => app.store.setQueued(foodId, !on) });
   } catch (err) {
     toast(describeStoreError(err));
   }
@@ -857,21 +1087,58 @@ async function toggleQueue(foodId) {
 
 // ---------- progress view ----------
 
+const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: "short", day: "numeric", month: "short" });
+
+function dayLabel(iso) {
+  const n = L.daysBetween(iso, L.todayISO());
+  if (n === 0) return "Today";
+  if (n === 1) return "Yesterday";
+  const [y, m, d] = iso.split("-").map(Number);
+  return dayFmt.format(new Date(y, m - 1, d));
+}
+
+function ringHTML(value, max) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  const filled = Math.min(1, value / max) * c;
+  return `<svg class="ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="ring-track" cx="60" cy="60" r="${r}"/><circle class="ring-fill" cx="60" cy="60" r="${r}" stroke-dasharray="${filled.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 60 60)"/></svg>`;
+}
+
+// A placeholder layout while the shared log loads.
+function progressSkeletonHTML() {
+  const block = (h) => `<span class="skeleton" style="height:${h}px"></span>`;
+  return `<div class="dash" aria-busy="true">
+    <section class="panel">${block(22)}${block(120)}${block(44)}</section>
+    <section class="panel">${block(22)}${block(180)}</section>
+    <section class="panel span-2">${block(22)}${block(56)}${block(56)}</section>
+  </div>`;
+}
+
 function renderProgress() {
   const name = babyName();
   const months = babyMonths();
+  const head = (sub) => `
+    <div class="page-head">
+      <div>
+        <h1>${name ? `${esc(name)}'s progress` : "Progress"}</h1>
+        <p class="muted">${months != null ? `${esc(name || "Baby")} is ${esc(L.formatAgeLong(months))} old. ` : ""}${sub}</p>
+      </div>
+    </div>
+    ${statusNoticesHTML()}`;
+  if (loading()) {
+    main.innerHTML = `${head('<span class="visually-hidden" role="status">Loading your tracker…</span>')}${progressSkeletonHTML()}`;
+    return;
+  }
   const tried = app.summaries.size;
   const target = goal();
-  const pct = Math.min(100, Math.round((tried / target) * 100));
   const all = [...app.summaries.values()];
   const totalTries = all.reduce((n, s) => n + s.count, 0);
-  const liked = all.filter((s) => s.status === "liked").length;
-  const learning = all.filter((s) => s.status === "learning").length;
-  const reactions = all.filter((s) => s.status === "reaction").length;
+  const count = (status) => all.filter((s) => s.status === status).length;
+  const reactions = count("reaction");
   const beforeOne = L.triedBeforeFirstBirthday(app.summaries, app.state.profile.birthDate);
   const allergens = L.allergenProgress(FOODS, app.summaries);
   const introduced = allergens.filter((a) => a.state !== "new").length;
-  const due = allergens.filter((a) => a.state === "due").length;
+  const notYet = allergens.filter((a) => a.state === "new");
   const cats = L.categoryProgress(FOODS, app.summaries);
   const queue = Object.values(app.state.queue)
     .sort((a, b) => a.addedAt - b.addedAt)
@@ -881,61 +1148,65 @@ function renderProgress() {
     .sort((a, b) => (a.date === b.date ? (b.createdAt || 0) - (a.createdAt || 0) : a.date < b.date ? 1 : -1))
     .slice(0, 20);
 
-  const allergenRows = allergens
-    .map((a) => {
-      const stateLabel = { new: "Not yet", ok: "In the diet", due: "Offer again", reaction: "Reaction" }[a.state];
-      let sub;
-      if (a.state === "new") {
-        sub = `Try: ${ALLERGEN_STARTERS[a.id]}`;
-      } else {
-        sub = `Last offered ${relDays(a.daysSince)} · ${a.tried.map((f) => f.name).join(", ")}`;
-      }
-      return `<li><button type="button" data-goto-allergen="${a.id}" aria-label="Show foods with ${esc(a.label.toLowerCase())}">
-        <span class="name">${esc(a.label)}</span><span class="state state-${a.state}">${stateLabel}</span><span class="sub">${esc(sub)}</span>
-      </button></li>`;
-    })
+  const STATE_LABEL = { new: "Not yet", ok: "In the diet", due: "Offer again", reaction: "Reaction" };
+  const allergenCells = allergens
+    .map(
+      (a) => `<li><button type="button" class="al-cell state-${a.state}" data-goto-allergen="${a.id}" aria-label="${esc(a.label)}: ${STATE_LABEL[a.state]}${a.lastDate ? `, last offered ${relDays(a.daysSince)}` : ""}. Show its foods.">
+        <span class="al-name">${esc(a.label)}</span>
+        <span class="al-state">${STATE_LABEL[a.state]}</span>
+        <span class="al-sub">${a.lastDate ? esc(relDays(a.daysSince)) : "&nbsp;"}</span>
+      </button></li>`,
+    )
     .join("");
 
+  // Recent tries, grouped under Today, Yesterday and earlier days.
+  const days = new Map();
+  for (const log of recent) {
+    if (!days.has(log.date)) days.set(log.date, []);
+    days.get(log.date).push(log);
+  }
   const activity = recent.length
-    ? `<ul class="activity">${recent
-        .map((log) => {
-          const food = FOODS_BY_ID.get(log.foodId);
-          const who = whoLogged(log);
-          const bits = [OUTCOME_LABEL[log.outcome], log.reactions?.length ? "reaction noted" : "", log.served, who && `by ${who}`].filter(Boolean);
-          return `<li>
-            <button type="button" class="mini-tile" data-cat="${food.cat}" data-open="${food.id}" aria-label="Open ${esc(food.name)}">${iconHTML(food)}</button>
-            <div class="what"><a href="#food-${food.id}" data-open="${food.id}">${esc(food.name)}</a><div class="sub">${esc(bits.join(" · "))}</div></div>
-            <span class="date">${esc(fmtDate(log.date))}</span>
-          </li>`;
-        })
-        .join("")}</ul>`
-    : `<div class="empty"><strong>Nothing logged yet</strong>Open any food and tap “Log a try” after a meal. Your history will show up here for both of you.</div>`;
+    ? [...days]
+        .map(
+          ([date, logs]) => `<h3 class="day-head">${esc(dayLabel(date))}</h3><ul class="activity">${logs
+            .map((log) => {
+              const food = FOODS_BY_ID.get(log.foodId);
+              const who = whoLogged(log);
+              const bits = [OUTCOME_LABEL[log.outcome], log.reactions?.length ? "reaction noted" : "", log.served, who && `by ${who}`].filter(Boolean);
+              return `<li>
+                <button type="button" class="mini-tile" data-cat="${food.cat}" data-open="${food.id}" aria-label="Open ${esc(food.name)}">${iconHTML(food)}</button>
+                <div class="what"><a href="#food-${food.id}" data-open="${food.id}">${esc(food.name)}</a><div class="sub${log.reactions?.length ? " has-reaction" : ""}">${esc(bits.join(" · "))}</div></div>
+              </li>`;
+            })
+            .join("")}</ul>`,
+        )
+        .join("")
+    : `<div class="empty"><strong>Nothing logged yet</strong>Tap the circle on any food after a meal. Your history will show up here for both of you.</div>`;
 
   main.innerHTML = `
-    <div class="page-head">
-      <div>
-        <h1>${name ? `${esc(name)}'s progress` : "Progress"}</h1>
-        <p class="muted">${months != null ? `${esc(name || "Baby")} is ${esc(L.formatAgeLong(months))} old. ` : ""}${loading() ? "Loading your tracker…" : loadError() ? "" : `${plural(totalTries, "try", "tries")} logged so far.`}</p>
-      </div>
-    </div>
-    ${statusNoticesHTML()}
+    ${head(loadError() ? "" : `${plural(totalTries, "try", "tries")} logged so far.`)}
     <div class="dash">
       <section class="panel">
         <div class="panel-head"><h2>Foods tried</h2><a href="#setup" class="muted" style="font-size:var(--step--1)">Goal: ${target}</a></div>
-        <div class="hero-count"><span class="big">${tried}</span><span class="muted">of ${target} foods${pct >= 100 ? " · goal reached!" : ""}</span></div>
-        <div class="meter" role="img" aria-label="${tried} of ${target} foods tried"><span style="width:${pct}%"></span></div>
-        ${beforeOne != null && months != null && months >= 12 && months < 24 ? `<p class="muted"><span class="num">${beforeOne}</span> first tried before the first birthday.</p>` : ""}
-        <div class="stat-row">
-          <div class="stat"><b>${liked}</b><span>Liked</span></div>
-          <div class="stat"><b>${learning}</b><span>Still learning</span></div>
-          <div class="stat"><b>${reactions}</b><span>${reactions === 1 ? "Reaction" : "Reactions"}</span></div>
-          <div class="stat"><b>${introduced}/9</b><span>Allergens</span></div>
+        <div class="hero">
+          <div class="ring-wrap" role="img" aria-label="${tried} of ${target} foods tried">
+            ${ringHTML(tried, target)}
+            <div class="ring-label"><span class="big">${tried}</span><span>of ${target}</span></div>
+          </div>
+          <div class="stat-grid">
+            <div class="stat st-liked">${MARK.liked}<b>${count("liked")}</b><span>Liked</span></div>
+            <div class="stat st-learning">${MARK.learning}<b>${count("learning")}</b><span>Still learning</span></div>
+            <div class="stat st-reaction">${MARK.reaction}<b>${reactions}</b><span>${reactions === 1 ? "Reaction" : "Reactions"}</span></div>
+          </div>
         </div>
+        ${tried >= target ? `<p class="goal-note">Goal reached! ${tried} different foods.</p>` : ""}
+        ${beforeOne != null && months != null && months >= 12 && months < 24 ? `<p class="muted"><span class="num">${beforeOne}</span> first tried before the first birthday.</p>` : ""}
       </section>
       <section class="panel">
-        <div class="panel-head"><h2>Common allergens</h2><span class="muted" style="font-size:var(--step--1)">${due ? `${due} to offer again` : `Keep each in the diet weekly`}</span></div>
-        <ul class="allergen-list">${allergenRows}</ul>
-        <p class="muted" style="font-size:var(--step--1)">“Offer again” means it hasn't been logged in over ${ALLERGEN_DUE_DAYS} days.</p>
+        <div class="panel-head"><h2>Common allergens</h2><span class="muted" style="font-size:var(--step--1)">${introduced} of ${allergens.length} introduced</span></div>
+        <ul class="allergen-grid">${allergenCells}</ul>
+        <p class="muted" style="font-size:var(--step--1)">Keep each one in the diet weekly. “Offer again” means it hasn't been logged in over ${ALLERGEN_DUE_DAYS} days. Tap one to see its foods.</p>
+        ${notYet.length ? `<details class="al-ideas"><summary>First-taste ideas for the ${plural(notYet.length, "one", "ones")} not tried yet</summary><ul>${notYet.map((a) => `<li><strong>${esc(a.label)}:</strong> ${esc(ALLERGEN_STARTERS[a.id])}</li>`).join("")}</ul></details>` : ""}
       </section>
       <section class="panel">
         <h2>To try next</h2>
@@ -949,35 +1220,52 @@ function renderProgress() {
       </section>
       <section class="panel span-2">
         <h2>Recent tries</h2>
-        ${activity}
+        <div class="activity-days">${activity}</div>
       </section>
     </div>`;
 }
 
 // ---------- guide view ----------
 
+// Sections fold open and closed; folded, their titles read as a contents
+// list. The readiness signs are a checklist shared by both phones.
 function renderGuide() {
+  const section = (id, title, body, open = false) => `<details class="guide-section" id="guide-${id}"${open ? " open" : ""}>
+    <summary><h2>${esc(title)}</h2>${ICON.chevron}</summary>
+    <div class="guide-body">${body}</div>
+  </details>`;
+  const total = GUIDE.find((g) => g.id === "ready").items.length;
   main.innerHTML = `
     <div class="page-head">
       <div>
         <h1>Starting solids guide</h1>
         <p class="muted">The essentials, in one place. Read it together before the first meal.</p>
       </div>
+      <button type="button" class="btn btn-small" data-action="guide-toggle-all">Open all</button>
     </div>
     <div class="guide-layout">
       <nav class="toc" aria-label="Guide sections"><ol>${GUIDE.map((s) => `<li><a href="#guide" data-jump="guide-${s.id}">${esc(s.title)}</a></li>`).join("")}<li><a href="#guide" data-jump="guide-sources">Sources</a></li></ol></nav>
       <div class="guide-sections">
-        ${GUIDE.map(
-          (s) => `<section class="guide-section" id="guide-${s.id}">
-            <h2>${esc(s.title)}</h2>
-            <p>${esc(s.intro)}</p>
-            ${s.items ? `<ul class="guide-items">${s.items.map((i) => `<li>${i.title ? `<strong>${esc(i.title)}</strong>` : ""}${esc(i.text)}</li>`).join("")}</ul>` : ""}
-            ${s.note ? `<p class="guide-note">${esc(s.note)}</p>` : ""}
-          </section>`,
+        ${GUIDE.map((s) =>
+          section(
+            s.id,
+            s.title,
+            `<p>${esc(s.intro)}</p>
+            ${
+              s.id === "ready"
+                ? `<p class="muted">Tick each sign as you see it: <span class="num" data-ready-count>${(app.state.profile.readySigns || []).length} of ${total}</span> so far.</p>${readySignsHTML({ details: true })}`
+                : s.items
+                  ? `<ul class="guide-items">${s.items.map((i) => `<li>${i.title ? `<strong>${esc(i.title)}</strong>` : ""}${esc(i.text)}</li>`).join("")}</ul>`
+                  : ""
+            }
+            ${s.note ? `<p class="guide-note">${esc(s.note)}</p>` : ""}`,
+            s.id === "ready",
+          ),
         ).join("")}
-        <section class="guide-section" id="guide-sources">
-          <h2>Sources and further reading</h2>
-          <p>The food notes in this app are general guidance written for this app, based on widely published advice from pediatric and public-health bodies. For each food, follow the link to Solid Starts for their detailed guide, photos and videos.</p>
+        ${section(
+          "sources",
+          "Sources and further reading",
+          `<p>The food notes in this app are general guidance written for this app, based on widely published advice from pediatric and public-health bodies. For each food, follow the link to Solid Starts for their detailed guide, photos and videos.</p>
           <ul class="guide-items">
             <li><strong>Solid Starts First Foods database</strong><a href="https://solidstarts.com/foods/" target="_blank" rel="noopener">solidstarts.com/foods ↗</a></li>
             <li><strong>American Academy of Pediatrics</strong><a href="https://www.healthychildren.org/English/ages-stages/baby/feeding-nutrition/Pages/Starting-Solid-Foods.aspx" target="_blank" rel="noopener">Starting solid foods ↗</a></li>
@@ -985,10 +1273,22 @@ function renderGuide() {
             <li><strong>US FDA</strong><a href="https://www.fda.gov/food/consumers/advice-about-eating-fish" target="_blank" rel="noopener">Advice about eating fish ↗</a></li>
           </ul>
           <p class="guide-note">Food icons: Fluent Emoji by Microsoft (MIT License), some recolored.</p>
-          <p class="guide-note">This app is not medical advice. Talk to your pediatrician about your baby's readiness, allergy risk and any concerns.</p>
-        </section>
+          <p class="guide-note">This app is not medical advice. Talk to your pediatrician about your baby's readiness, allergy risk and any concerns.</p>`,
+        )}
       </div>
     </div>`;
+}
+
+// Bring every readiness checkbox and count up to date (e.g. after the other
+// phone ticks one), without redrawing what someone may be tapping.
+function syncReadySigns() {
+  const ticked = new Set(app.state.profile.readySigns || []);
+  for (const box of document.querySelectorAll("[data-ready-sign]")) {
+    box.checked = ticked.has(box.dataset.readySign);
+    box.disabled = !canWrite();
+  }
+  const total = GUIDE.find((g) => g.id === "ready").items.length;
+  for (const count of document.querySelectorAll("[data-ready-count]")) count.textContent = `${ticked.size} of ${total}`;
 }
 
 // ---------- setup view ----------
@@ -1336,9 +1636,17 @@ function refresh() {
   if (app.view === "foods") {
     const notices = $("#status-notices");
     if (notices) notices.innerHTML = statusNoticesHTML();
+    // The how-to line is only needed until the first try is logged.
+    const intro = $("#foods-intro");
+    if (intro) intro.hidden = app.summaries.size > 0;
+    const next = $("#next-card");
+    // Don't redraw a checkbox someone is tapping.
+    if (next && !next.contains(document.activeElement)) next.innerHTML = nextCardHTML();
+    else if (next) syncReadySigns();
     renderFoodResults();
     if (filterSheet.open) updateFilterDone();
   } else if (app.view === "progress") renderProgress();
+  else if (app.view === "guide") syncReadySigns();
   else if (app.view === "setup") refreshSetup();
   if (app.openFoodId && sheet.open) refreshSheetLog(FOODS_BY_ID.get(app.openFoodId));
 }
@@ -1364,7 +1672,7 @@ async function resolveNames() {
 // ---------- events ----------
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-action],[data-open],[data-status],[data-stage],[data-goto-allergen],[data-jump]");
+  const t = e.target.closest("[data-action],[data-open],[data-status],[data-stage],[data-goto-allergen],[data-jump],[data-group]");
   if (!t) return;
   if (t.dataset.open) {
     e.preventDefault();
@@ -1389,9 +1697,15 @@ document.addEventListener("click", (e) => {
     location.hash = "foods";
     return;
   }
+  if (t.dataset.group) {
+    document.querySelector(`.group[data-cat="${t.dataset.group}"]`)?.scrollIntoView({ behavior: smooth() });
+    return;
+  }
   if (t.dataset.jump) {
     e.preventDefault();
-    document.getElementById(t.dataset.jump)?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    const target = document.getElementById(t.dataset.jump);
+    if (target && target.tagName === "DETAILS") target.open = true;
+    target?.scrollIntoView({ behavior: smooth() });
     return;
   }
   switch (t.dataset.action) {
@@ -1401,11 +1715,38 @@ document.addEventListener("click", (e) => {
     case "quick-save":
       quickSave(t);
       break;
+    case "undo":
+      undoLast();
+      break;
+    case "guide-toggle-all": {
+      const sections = [...document.querySelectorAll(".guide-section")];
+      const open = !sections.every((d) => d.open);
+      for (const d of sections) d.open = open;
+      t.textContent = open ? "Close all" : "Open all";
+      break;
+    }
+    case "to-top":
+      window.scrollTo({ top: 0, behavior: smooth() });
+      $("#food-search").focus({ preventScroll: true });
+      break;
+    case "clear-search":
+      app.filters.q = "";
+      $("#food-search").value = "";
+      $("#search-clear").hidden = true;
+      $("#food-search").focus();
+      renderFoodResults();
+      break;
     case "log-details":
       openLogDialog(logDialog.dataset.food);
       break;
     case "log-reaction":
       openLogDialog(logDialog.dataset.food, null, { reaction: true });
+      break;
+    case "log-date":
+      setLogDate(t.dataset.when);
+      break;
+    case "served-pick":
+      toggleServed(t);
       break;
     case "open-filters":
       openFilters();
@@ -1502,7 +1843,13 @@ document.addEventListener("click", (e) => {
 document.addEventListener("input", (e) => {
   if (e.target.id === "food-search") {
     app.filters.q = e.target.value;
+    $("#search-clear").hidden = !e.target.value;
     renderFoodResults();
+    // Typing in the stuck search bar: bring the first results up under it.
+    const below = $(".filters", main).getBoundingClientRect().top - $("#search-bar").getBoundingClientRect().bottom;
+    if (below < 0) window.scrollBy(0, below);
+  } else if (e.target.id === "log-served") {
+    updateServedPicks();
   } else if (e.target.id === "clear-confirm") {
     $('[data-action="clear-all-confirm"]').disabled = e.target.value.trim().toUpperCase() !== "DELETE";
   }
@@ -1516,7 +1863,9 @@ document.addEventListener("change", (e) => {
     updateFilterDone();
     return;
   }
-  if (t.dataset.profile) {
+  if (t.dataset.readySign) {
+    toggleReadySign(t);
+  } else if (t.dataset.profile) {
     saveProfileField(t);
   } else if (t.id === "device-name") {
     setDeviceName(t.value.trim());
@@ -1564,6 +1913,78 @@ logDialog.addEventListener("click", (e) => {
 
 filterSheet.addEventListener("click", (e) => {
   if (e.target === filterSheet) filterSheet.close();
+});
+
+// Drag a sheet down to close it, like a native bottom sheet. The drag starts
+// from the header, or anywhere once the sheet is scrolled to the top.
+function enableSwipeClose(dialog, { allow = () => true, close }) {
+  let drag = null;
+  const reset = () => {
+    dialog.style.transition = "";
+    dialog.style.transform = "";
+  };
+  dialog.addEventListener(
+    "touchstart",
+    (e) => {
+      drag = null;
+      if (e.touches.length !== 1 || matchMedia("(min-width: 760px)").matches) return;
+      if (e.target.closest(".chip-row, .choice-row, .stages, input, textarea, select")) return;
+      const fromHead = !!e.target.closest(".sheet-head");
+      if (!fromHead && dialog.scrollTop > 0) return;
+      drag = { y: e.touches[0].clientY, t: Date.now(), dy: 0, fromHead };
+    },
+    { passive: true },
+  );
+  dialog.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!drag) return;
+      const dy = e.touches[0].clientY - drag.y;
+      if (dy < 0 || (!drag.fromHead && dialog.scrollTop > 0)) {
+        drag = null;
+        reset();
+        return;
+      }
+      // Dragging the header moves the sheet, not the content behind it.
+      if (drag.fromHead && e.cancelable) e.preventDefault();
+      drag.dy = dy;
+      dialog.style.transition = "none";
+      dialog.style.transform = `translateY(${dy}px)`;
+    },
+    { passive: false },
+  );
+  const end = () => {
+    if (!drag) return;
+    const { dy, t } = drag;
+    drag = null;
+    const flick = dy > 40 && dy / Math.max(1, Date.now() - t) > 0.6;
+    dialog.style.transition = "transform 180ms ease-out";
+    if ((dy > 110 || flick) && allow()) {
+      dialog.style.transform = "translateY(100%)";
+      setTimeout(close, 170);
+    } else {
+      dialog.style.transform = "";
+    }
+  };
+  dialog.addEventListener("touchend", end);
+  dialog.addEventListener("touchcancel", end);
+  dialog.addEventListener("close", () => {
+    reset();
+    // Keep a visible message (and its Undo) on screen when its dialog closes.
+    if (toastEl.parentElement === dialog && !toastEl.hidden) showToastIn(toastHost());
+  });
+}
+
+enableSwipeClose(sheet, { close: closeFood });
+enableSwipeClose(filterSheet, { close: () => filterSheet.close() });
+enableSwipeClose(logDialog, {
+  // Ask before throwing away what's been entered.
+  allow: () => {
+    if (logFormSnapshot() === logDialog.dataset.initial) return true;
+    setLogDiscardBar(true);
+    return false;
+  },
+  close: () => logDialog.close(),
 });
 
 window.addEventListener("hashchange", route);

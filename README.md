@@ -12,10 +12,11 @@ served, and any reaction.
   - common allergens, choking risk, and whether it's iron-rich
   - safety and nutrition tips
   - a link to the food's page on [Solid Starts](https://solidstarts.com/foods/) for their full guide, photos and videos (356 foods have one)
-- **Tracker.** Tap the circle on any food tile and pick a face (loved it → wouldn't try) to log today's try in one tap. **Add details** covers the date, how it was served, any reaction signs and notes. Each tile shows its status (liked, still learning or reaction, each with its own symbol) and how many times it's been tried.
-- **Progress.** Foods tried against your goal (100 before the first birthday by default), the nine common allergens (with a nudge when one hasn't been offered in a week), a to-try list, progress by category, and recent tries showing who logged each one.
-- **Guide.** Readiness signs, safe set-up, gagging vs. choking, sizes and shapes by age, common choking hazards, allergen introduction, reaction signs, foods to avoid, iron, and how much to offer.
-- **Search and filters** (behind the Filters button) by name (including other names like *courgette* and *capsicum*), category, allergen, what's safe at your baby's age, iron-rich, choking hazards, and tried/liked/still learning/reaction/to-try.
+- **Tracker.** Tap the circle on any food tile and pick a face (loved it → wouldn't try) to log today's try in one tap, with **Undo** if you tap the wrong one. **Add details** covers the day (Today, Yesterday or another day), how it was served (with quick picks like *mashed* or *pre-loaded spoon*), any reaction signs and notes. Each tile shows its status (liked, still learning or reaction, each with its own symbol) and how many times it's been tried.
+- **What's next.** Before 6 months, a countdown and a readiness checklist you both can tick. After that, ideas for what to offer next: allergens due again, the next allergen to introduce, your to-try list and iron-rich foods.
+- **Progress.** A ring for foods tried against your goal (100 before the first birthday by default), the nine common allergens as a grid (with a nudge when one hasn't been offered in a week), a to-try list, progress by category, and recent tries grouped by day, showing who logged each one.
+- **Guide.** Sections that fold open: readiness signs (as a shared checklist), safe set-up, gagging vs. choking, sizes and shapes by age, common choking hazards, allergen introduction, reaction signs, foods to avoid, iron, and how much to offer.
+- **Search and filters** (search stays at the top as you scroll, with a bar to jump between categories; the rest is behind the Filters button) by name (including other names like *courgette* and *capsicum*), category, allergen, what's safe at your baby's age, iron-rich, choking hazards, and tried/liked/still learning/reaction/to-try.
 
 ## About the food information
 

@@ -54,6 +54,11 @@ test("summarizeLogs derives status from the latest try and any reaction", () => 
   assert.equal(recovered.lastReactionDate, "2026-10-01");
 });
 
+test("daysAgoISO counts back calendar days", () => {
+  assert.equal(L.daysAgoISO(1, new Date(2026, 2, 1, 9)), "2026-02-28");
+  assert.equal(L.daysAgoISO(0, new Date(2026, 9, 30, 23, 59)), "2026-10-30");
+});
+
 test("formatAgeLong spells out ages for sentences", () => {
   assert.equal(L.formatAgeLong(1), "1 month");
   assert.equal(L.formatAgeLong(4), "4 months");
@@ -77,6 +82,26 @@ test("allergenProgress marks introduced, due and reaction states", () => {
   assert.equal(rows.milk.state, "reaction");
   assert.equal(rows.fish.state, "ok", "fish was offered again without symptoms");
   assert.equal(rows.sesame.state, "new");
+});
+
+test("suggestNext puts due allergens first, then one new allergen, the to-try list and iron", () => {
+  const firstFoods = { milk: "yogurt", egg: "eggs", peanut: "peanut-butter", treenut: "almond", sesame: "sesame", soy: "tofu", wheat: "pasta", fish: "salmon", shellfish: "shrimp" };
+  const state = L.emptyState();
+  state.logs.a = log("a", "peanut-butter", "2026-10-01", "liked");
+  state.logs.b = log("b", "yogurt", "2026-10-20", "liked");
+  state.queue.mango = { foodId: "mango", addedAt: 1 };
+  const summaries = L.summarizeAll(state);
+  const args = { foods: FOODS, summaries, queue: state.queue, today: "2026-10-22", firstFoods, ironStarters: ["infant-cereal", "beef"] };
+  const ideas = L.suggestNext({ ...args, months: 7 });
+  assert.deepEqual(ideas.map((i) => [i.id, i.kind]), [["peanut-butter", "due"], ["eggs", "allergen"], ["mango", "queued"], ["infant-cereal", "iron"]]);
+  assert.equal(ideas[0].daysSince, 21);
+  const early = L.suggestNext({ ...args, months: 4 });
+  assert.ok(!early.some((i) => i.kind === "allergen"), "no new allergens before 6 months");
+});
+
+test("cleanProfile keeps the readiness checklist", () => {
+  assert.deepEqual(L.cleanProfile({ readySigns: ["sits", 3, "mouth"] }).readySigns, ["sits", "mouth"]);
+  assert.equal(L.cleanProfile({ readySigns: "sits" }).readySigns, undefined);
 });
 
 test("triedBeforeFirstBirthday counts first tries before turning one", () => {

@@ -12,6 +12,11 @@ export function todayISO(now = new Date()) {
   return toISODate(now);
 }
 
+// The date n days before today, in the phone's own time zone.
+export function daysAgoISO(n, now = new Date()) {
+  return toISODate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - n));
+}
+
 export function toISODate(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -145,6 +150,31 @@ export function allergenProgress(foods, summaries, todayIso = todayISO()) {
   });
 }
 
+// Up to `limit` ideas for what to offer next: allergens that are due again,
+// then one new allergen (from 6 months), the to-try list, and iron-rich foods.
+export function suggestNext({ foods, summaries, queue, months, today = todayISO(), firstFoods, ironStarters, limit = 4 }) {
+  const byId = new Map(foods.map((f) => [f.id, f]));
+  const out = [];
+  const add = (id, kind, extra = {}) => {
+    if (out.length < limit && byId.has(id) && !out.some((s) => s.id === id)) out.push({ id, kind, ...extra });
+  };
+  const allergens = allergenProgress(foods, summaries, today);
+  for (const a of allergens.filter((x) => x.state === "due").sort((x, y) => y.daysSince - x.daysSince)) {
+    const latest = [...a.tried].sort((x, y) => (summaries.get(x.id).lastDate < summaries.get(y.id).lastDate ? 1 : -1))[0];
+    add(latest.id, "due", { allergen: a.id, daysSince: a.daysSince });
+  }
+  if (months == null || months >= 6) {
+    const fresh = allergens.find((a) => a.state === "new");
+    if (fresh) add(firstFoods[fresh.id], "allergen", { allergen: fresh.id });
+  }
+  for (const q of Object.values(queue).sort((a, b) => a.addedAt - b.addedAt)) add(q.foodId, "queued");
+  for (const id of ironStarters) {
+    const food = byId.get(id);
+    if (food && !summaries.has(id) && isReadyAt(food, months)) add(id, "iron");
+  }
+  return out;
+}
+
 export function categoryProgress(foods, summaries) {
   return CATEGORIES.map((c) => {
     const inCat = foods.filter((f) => f.cat === c.id);
@@ -217,6 +247,7 @@ export function cleanProfile(raw) {
   if (typeof raw.babyName === "string") p.babyName = raw.babyName.slice(0, 60);
   if (typeof raw.birthDate === "string" && (raw.birthDate === "" || ISO_DATE.test(raw.birthDate))) p.birthDate = raw.birthDate;
   if (Number.isInteger(raw.goal) && raw.goal > 0 && raw.goal <= 1000) p.goal = raw.goal;
+  if (Array.isArray(raw.readySigns)) p.readySigns = raw.readySigns.filter((x) => typeof x === "string" && x.length <= 40).slice(0, 20);
   return p;
 }
 
