@@ -13,6 +13,7 @@ served, and any reaction.
   - safety and nutrition tips
   - a link to the food's page on [Solid Starts](https://solidstarts.com/foods/) for their full guide, photos and videos (356 foods have one)
 - **Tracker.** Tap the circle on any food tile and pick a face (loved it → wouldn't try) to log today's try in one tap, with **Undo** if you tap the wrong one. **Add details** covers the day (Today, Yesterday or another day), how it was served (with quick picks like *mashed* or *pre-loaded spoon*), any reaction signs and notes. Each tile shows its status (liked, still learning or reaction, each with its own symbol) and how many times it's been tried.
+- **Your own foods.** Add anything that isn't listed, by tapping **Add a food** (or **Add "…"** when a search finds nothing). File it under any category, e.g. kangaroo under Meat & poultry, or under the new **Meals & mixed foods** for pouches and dishes. Say what's in it by picking listed foods: logging the meal then counts as a try of each one (and of its allergens), and their age, choking and allergen advice carries over. A reaction to a meal stays with the meal, with a note on each food in it. Tick any other allergens on the label, and keep the printed ingredients and notes. With sync on, both phones see your foods. Optionally, **read a label from a photo** to fill the form in (see below).
 - **What's next.** Before 6 months, a countdown and a readiness checklist you both can tick. After that, ideas for what to offer next: allergens due again, the next allergen to introduce, your to-try list and iron-rich foods.
 - **Progress.** A ring for foods tried against your goal (100 before the first birthday by default), the nine common allergens as a grid (with a nudge when one hasn't been offered in a week), a to-try list, progress by category, and recent tries grouped by day, showing who logged each one.
 - **Guide.** Sections that fold open: readiness signs (as a shared checklist), safe set-up, gagging vs. choking, sizes and shapes by age, common choking hazards, allergen introduction, reaction signs, foods to avoid, iron, and how much to offer.
@@ -76,6 +77,24 @@ Firebase is Google's app database service. The free plan is plenty for this app.
 
 After that, a try logged on either phone shows up on the other within seconds. Logging works offline too, and catches up when the phone reconnects.
 
+### Reading food labels from a photo (optional)
+
+With sync set up, the **Add a food** form can read a label from a photo: take a picture of the ingredients and allergen statement, and the name, brand, ingredients and allergens are filled in for you to check. It uses Google's Gemini through your own Firebase project, on the free plan (no billing account). It needs a one-time setup, about 10 minutes:
+
+1. **Switch on AI Logic.** In the [Firebase console](https://console.firebase.google.com), open your project, go to **AI Services → AI Logic** and click **Get started**. When asked for a Gemini API provider, choose **Gemini Developer API** (the no-cost option) and finish the steps. This also switches on **App Check** for AI Logic, which only lets requests from your site through.
+2. **Get a reCAPTCHA key** (App Check uses it to recognise your site). Go to the [reCAPTCHA admin console](https://www.google.com/recaptcha/admin/create), sign in with the same Google account, and create a key: label it *First Bites*, choose **Score based (v3)**, and add the domain `<your-username>.github.io`. Copy the **site key** and the **secret key**.
+3. **Register your site with App Check.** In the Firebase console, go to **Security → App Check → Apps**, find your web app, choose **reCAPTCHA**, paste the **secret key** and click **Save**.
+4. **Tell the app the site key.** In [`js/sync-config.js`](js/sync-config.js), paste the **site key** between the quotes in `LABEL_READING`, and commit. (The site key isn't a secret; never paste the secret key here.)
+
+Once the site has redeployed, open **Add a food** and tap **Read a label from a photo**.
+
+Good to know:
+
+- Always check what was read against the pack before saving. Allergens come from the label's "Contains" statement and a second check of the printed ingredients, but a photo can be misread.
+- The free plan has daily limits, which are plenty for a few labels a day. If you hit one, the app says so; type the food in instead.
+- The photo is sent to Google to be read and isn't kept by the app. On the free plan, Google may use what's sent to improve its products.
+- If the reCAPTCHA site sends you to Google Cloud to create the key instead, create a score-based **Website** key for your domain there, register it in App Check as **reCAPTCHA Enterprise**, and add `provider: "recaptcha-enterprise"` next to the site key in `js/sync-config.js`.
+
 ### claude.ai Artifact
 
 `npm run build:artifact` builds `dist/first-bites.html`, a single page that can
@@ -100,10 +119,11 @@ The app itself needs no build step: it is plain HTML, CSS and ES modules.
 | `js/app.js` | Screens, routing and event handling |
 | `js/logic.js` | Pure functions: ages, statuses, allergen progress, backup merge |
 | `js/store.js` | Storage: this device, the claude.ai shared database, or Firebase |
-| `js/cloud.js`, `js/sync-config.js` | Optional Firebase sync: loader and your project config |
+| `js/cloud.js`, `js/sync-config.js` | Optional Firebase sync and label reading: loader and your project config |
+| `js/label.js` | Reading a label from a photo: the request to the model and matching its answer to the food list |
 | `js/data/*.js` | The food list (one file per category), guide text and icon map |
 | `js/data/icons.js` | Generated food icons (`npm run build:icons`) |
-| `js/vendor/firebase.js` | Generated Firebase bundle (`npm run build:firebase`) |
+| `js/vendor/` | Generated Firebase bundles (`npm run build:firebase`): `firebase.js` for syncing, `firebase-ai.js` for label reading, and the core they share |
 | `sw.js`, `manifest.webmanifest`, `icons/` | Offline support and home-screen install |
 | `firestore.rules` | Security rules template for Firebase |
 | `scripts/` | Build scripts for the icons, Firebase bundle and Artifact page, and the link checker |

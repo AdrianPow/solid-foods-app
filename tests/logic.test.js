@@ -160,3 +160,70 @@ test("cleanLog strips unexpected fields and bounds text", () => {
   assert.equal(cleaned.notes.length, 2000);
   assert.equal(cleaned.evil, undefined);
 });
+
+// ---------- foods the family adds ----------
+
+const BY_ID = new Map(FOODS.map((f) => [f.id, f]));
+const CAT_ICONS = { mixed: "pot-of-food", meat: "cut-of-meat", fruit: "red-apple" };
+const custom = (extra) => L.cleanCustomFood({ id: "my-potato-beef-ab12cd", name: "Potato & beef purée", cat: "mixed", ingredients: ["potato", "beef"], allergens: [], createdAt: 1, updatedAt: 1, ...extra }, KNOWN);
+
+test("cleanCustomFood keeps valid family foods and drops bad fields", () => {
+  const food = L.cleanCustomFood({ id: "my-pouch-1", name: "  Pouch  ", cat: "mixed", ingredients: ["potato", "unicorn", "potato", "my-other"], allergens: ["milk", "lupin"], mayContain: ["egg"], brand: "Acme", extra: 1 }, KNOWN);
+  assert.deepEqual(food.ingredients, ["potato"]);
+  assert.deepEqual(food.allergens, ["milk"]);
+  assert.deepEqual(food.mayContain, ["egg"]);
+  assert.equal(food.name, "Pouch");
+  assert.equal(food.extra, undefined);
+  assert.equal(L.cleanCustomFood({ id: "avocado", name: "x", cat: "fruit" }, KNOWN), null, "ids must start with my-");
+  assert.equal(L.cleanCustomFood({ id: "my-x", name: "", cat: "fruit" }, KNOWN), null, "needs a name");
+  assert.equal(L.cleanCustomFood({ id: "my-x", name: "x", cat: "snacks" }, KNOWN), null, "needs a real category");
+  assert.ok(L.isCustomId(L.newCustomId("Kangaroo mince!")));
+});
+
+test("expandCustomFood takes age, choking, iron, allergens and icon from what's in it", () => {
+  const pouch = L.expandCustomFood(custom({ allergens: ["milk"] }), BY_ID, CAT_ICONS);
+  assert.equal(pouch.age, 6);
+  assert.equal(pouch.iron, true, "beef is iron-rich");
+  assert.deepEqual(pouch.allergens, ["milk"]);
+  assert.equal(pouch.icon, "pot-of-food", "a mix uses its category icon");
+  const honeyYogurt = L.expandCustomFood(custom({ ingredients: ["yogurt", "honey"] }), BY_ID, CAT_ICONS);
+  assert.equal(honeyYogurt.age, 12);
+  assert.match(honeyYogurt.wait, /honey/);
+  assert.deepEqual(honeyYogurt.allergens, ["milk"], "yogurt brings milk");
+  const roo = L.expandCustomFood(custom({ name: "Kangaroo", cat: "meat", ingredients: [] }), BY_ID, CAT_ICONS);
+  assert.equal(roo.age, 6);
+  assert.equal(roo.choking, null, "unknown without ingredients");
+  assert.equal(roo.icon, "cut-of-meat");
+  assert.equal(L.countsAsFood(roo), true);
+  assert.equal(L.countsAsFood(pouch), false, "a mix counts as its ingredients");
+});
+
+test("a meal counts as a try of each ingredient, but its reaction stays with the meal", () => {
+  const state = L.emptyState();
+  const meal = custom();
+  state.foods[meal.id] = meal;
+  state.logs.a = log("a", meal.id, "2026-11-01", "loved");
+  state.logs.b = log("b", meal.id, "2026-11-03", "liked", { reactions: ["rash"] });
+  state.logs.c = log("c", "potato", "2026-10-20", "liked");
+  state.logs.d = log("d", "my-deleted-food", "2026-11-02", "liked");
+  const s = L.summarizeAll(state);
+  assert.equal(s.get(meal.id).status, "reaction");
+  assert.equal(s.get("potato").count, 3);
+  assert.equal(s.get("potato").mealCount, 2);
+  assert.equal(s.get("potato").status, "liked", "the meal's reaction doesn't mark potato");
+  assert.deepEqual(s.get("beef").mealReactions, [{ mealId: meal.id, date: "2026-11-03" }]);
+  assert.equal(s.has("my-deleted-food"), false, "tries of a deleted food are ignored");
+});
+
+test("logs, to-try entries and backups accept family foods", () => {
+  assert.ok(L.cleanLog(log("a", "my-pouch-1", "2026-11-01", "liked"), KNOWN));
+  assert.equal(L.cleanLog(log("a", "unicorn", "2026-11-01", "liked"), KNOWN), null);
+  const meal = custom();
+  const backup = L.makeBackup({ ...L.emptyState(), foods: { [meal.id]: meal }, logs: { a: log("a", meal.id, "2026-11-01", "liked") }, queue: { [meal.id]: { foodId: meal.id, addedAt: 1 } } });
+  const { state, added } = L.mergeBackup(L.emptyState(), backup, KNOWN);
+  assert.equal(added, 1);
+  assert.equal(state.foods[meal.id].name, "Potato & beef purée");
+  assert.ok(state.queue[meal.id]);
+  const newer = L.mergeBackup(state, { app: "first-bites", foods: { [meal.id]: { ...meal, name: "Renamed", updatedAt: 5 } } }, KNOWN);
+  assert.equal(newer.state.foods[meal.id].name, "Renamed", "the newer edit wins");
+});

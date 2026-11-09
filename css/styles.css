@@ -23,6 +23,7 @@
   --focus: #1f6feb;
   --shadow: 0 10px 30px rgb(28 37 27 / 0.16);
 
+  --t-mixed: #e6def4;
   --t-fruit: #f7d6da;
   --t-veg: #d5ebcd;
   --t-grain: #f2e4c2;
@@ -78,6 +79,7 @@
     --bad-soft: #3d1d1a;
     --focus: #7cb2ff;
     --shadow: 0 10px 30px rgb(0 0 0 / 0.5);
+    --t-mixed: #2f2a41;
     --t-fruit: #43282c;
     --t-veg: #26392a;
     --t-grain: #3d3420;
@@ -115,6 +117,7 @@
   --bad-soft: #3d1d1a;
   --focus: #7cb2ff;
   --shadow: 0 10px 30px rgb(0 0 0 / 0.5);
+  --t-mixed: #2f2a41;
   --t-fruit: #43282c;
   --t-veg: #26392a;
   --t-grain: #3d3420;
@@ -893,6 +896,7 @@ main {
   overflow: hidden;
 }
 
+.tile[data-cat="mixed"] { --tile: var(--t-mixed); }
 .tile[data-cat="fruit"] { --tile: var(--t-fruit); }
 .tile[data-cat="veg"] { --tile: var(--t-veg); }
 .tile[data-cat="grain"] { --tile: var(--t-grain); }
@@ -1334,6 +1338,7 @@ main {
   height: 36px;
 }
 
+.big-tile[data-cat="mixed"] { --tile: var(--t-mixed); }
 .big-tile[data-cat="fruit"] { --tile: var(--t-fruit); }
 .big-tile[data-cat="veg"] { --tile: var(--t-veg); }
 .big-tile[data-cat="grain"] { --tile: var(--t-grain); }
@@ -1728,6 +1733,182 @@ fieldset {
 
 .form-actions .spacer {
   flex: 1;
+}
+
+/* The family's own foods: what's in them, the label, and the add form. */
+.ingredient-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ingredient {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 4px 14px 4px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: var(--step--1);
+}
+
+.ingredient .mini-tile {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+.ingredient .mini-tile .food-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.label-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}
+
+.in-meals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: var(--step--1);
+  color: var(--ink-2);
+}
+
+.chip-link {
+  color: var(--pea);
+}
+
+.add-own {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+  color: var(--ink-2);
+  font-size: var(--step--1);
+}
+
+.empty-actions {
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.page-head .btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.search-small svg {
+  width: 18px;
+  height: 18px;
+}
+
+.search-small input {
+  min-height: 44px;
+  font-size: var(--step-0);
+}
+
+.hint {
+  font-size: var(--step--1);
+  color: var(--ink-3);
+}
+
+.chip:disabled {
+  cursor: default;
+}
+
+.chip svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+
+.ff-may summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  font-size: var(--step--1);
+  font-weight: 700;
+  color: var(--pea);
+}
+
+/* Reading a label from a photo. */
+.label-reader {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--pea-soft);
+}
+
+.label-reader .btn {
+  justify-self: start;
+  cursor: pointer;
+}
+
+.label-reader .btn.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.label-reader .hint a {
+  color: inherit;
+}
+
+.form-note > svg {
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+  vertical-align: -3px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.read-ok {
+  display: grid;
+  gap: 4px;
+}
+
+.reading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+}
+
+.spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid var(--line);
+  border-top-color: var(--pea);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* reCAPTCHA's floating badge would cover the tab bar; its notice is shown
+   next to the button that uses it instead, as Google allows. */
+.grecaptcha-badge {
+  visibility: hidden;
 }
 
 /* Quick log: one tap on a face saves today's try. */
@@ -2130,6 +2311,7 @@ fieldset {
   height: 20px;
 }
 
+.mini-tile[data-cat="mixed"] { --tile: var(--t-mixed); }
 .mini-tile[data-cat="fruit"] { --tile: var(--t-fruit); }
 .mini-tile[data-cat="veg"] { --tile: var(--t-veg); }
 .mini-tile[data-cat="grain"] { --tile: var(--t-grain); }

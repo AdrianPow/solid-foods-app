@@ -4,6 +4,7 @@
 // A food missing from this list falls back to its category's icon.
 
 export const CATEGORY_ICONS = {
+  mixed: "pot-of-food",
   fruit: "red-apple",
   veg: "leafy-green",
   grain: "sheaf-of-rice",

@@ -18,3 +18,11 @@ export const FIREBASE_CONFIG = {
   messagingSenderId: "284763479349",
   appId: "1:284763479349:web:159149d5bcdf5f3f17407c",
 };
+
+// Optional: read food labels from a photo when adding a food. See "Reading
+// food labels from a photo" in README.md. Paste the reCAPTCHA site key
+// between the quotes to switch it on; leave it empty to keep it off.
+// (A site key isn't a secret: it's meant to be in the page.)
+export const LABEL_READING = {
+  recaptchaSiteKey: "",
+};

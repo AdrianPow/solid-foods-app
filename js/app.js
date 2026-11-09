@@ -1,10 +1,12 @@
 import { FOODS, FOODS_BY_ID } from "./data/index.js";
+import { CATEGORY_ICONS } from "./data/food-icons.js";
 import { ALLERGENS, ALLERGEN_DUE_DAYS, ALLERGEN_FIRST_FOOD, ALLERGEN_STARTERS, CATEGORIES, CHOKING, DEFAULT_GOAL, IRON_STARTERS, OUTCOMES, REACTIONS, SERVED_STYLES, STAGES } from "./data/meta.js";
 import { GUIDE } from "./data/guide.js";
 import { ICONS, ICON_VIEWBOX } from "./data/icons.js";
 import * as L from "./logic.js";
 import { CloudStore, LocalStore, describeStoreError, getDeviceName, openStore, readLocalState, removeLocalLogs, setDeviceName } from "./store.js";
-import { describeAuthError, loadCloud, readSyncConfig } from "./cloud.js";
+import { describeAuthError, describeLabelError, loadCloud, readLabelImage, readSyncConfig } from "./cloud.js";
+import { LABEL_MODEL, LABEL_PROMPT, labelSchema, parseLabel } from "./label.js";
 
 const KNOWN_IDS = new Set(FOODS.map((f) => f.id));
 const CAT_LABEL = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.label]));
@@ -32,10 +34,33 @@ const app = {
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
+
+// The built-in foods plus the family's own, rebuilt whenever the log
+// changes. Everything that lists or looks up foods goes through these.
+let foodList = FOODS;
+let foodMap = FOODS_BY_ID;
+
+function rebuildFoods() {
+  const own = Object.values(app.state.foods || {}).map((f) => L.expandCustomFood(f, FOODS_BY_ID, CATEGORY_ICONS));
+  foodList = own.length ? [...own, ...FOODS].sort((a, b) => a.name.localeCompare(b.name)) : FOODS;
+  foodMap = new Map(foodList.map((f) => [f.id, f]));
+}
+
+function foodById(id) {
+  return foodMap.get(id);
+}
+
+// Foods tried toward the goal: a mix counts as what's in it.
+function triedFoods() {
+  const out = new Map();
+  for (const [id, s] of app.summaries) if (L.countsAsFood(foodById(id))) out.set(id, s);
+  return out;
+}
 const main = $("#view");
 const sheet = $("#food-sheet");
 const logDialog = $("#log-dialog");
 const filterSheet = $("#filter-sheet");
+const foodForm = $("#food-form");
 
 // ---------- helpers ----------
 
@@ -193,6 +218,7 @@ const ICON = {
   search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
   filter: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>',
   chevron: '<svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>',
+  camera: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
   bookmark: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4h11v16l-5.5-4-5.5 4z"/></svg>',
   hazard: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5L21.5 20h-19z"/><path d="M12 10v4.5M12 17.4v.1"/></svg>',
@@ -225,7 +251,7 @@ function renderChrome() {
   const chip = $("#baby-chip");
   const name = babyName();
   const months = babyMonths();
-  const tried = app.summaries.size;
+  const tried = triedFoods().size;
   if (name || months != null) {
     chip.innerHTML = `<strong>${esc(name || "Baby")}</strong>${months != null ? `<span class="num muted">· ${esc(L.formatAge(months))}</span>` : ""}`;
     chip.setAttribute("aria-label", `${name || "Baby"}: ${months != null ? L.formatAge(months) + ", " : ""}${tried} foods tried. Edit baby details.`);
@@ -319,6 +345,7 @@ function renderFoods() {
         <h1>Foods</h1>
         <p class="muted" id="foods-intro"${app.summaries.size ? " hidden" : ""}>${FOODS.length} foods with age-by-age serving tips. Tap a tile for details, or its circle to log a try.</p>
       </div>
+      <button type="button" class="btn btn-small" data-action="add-food" id="add-food-btn"${canWrite() ? "" : " hidden"}>${ICON.plus}Add a food</button>
     </div>
     <div id="status-notices">${statusNoticesHTML()}</div>
     <div id="install-notice">${installNoticeHTML()}</div>
@@ -354,7 +381,7 @@ function nextCardHTML() {
   const months = babyMonths();
   if (months == null || loading() || loadError()) return "";
   if (months < 6 && !app.summaries.size) return startingSoonHTML(months);
-  const ideas = L.suggestNext({ foods: FOODS, summaries: app.summaries, queue: app.state.queue, months, firstFoods: ALLERGEN_FIRST_FOOD, ironStarters: IRON_STARTERS });
+  const ideas = L.suggestNext({ foods: foodList, summaries: app.summaries, queue: app.state.queue, months, firstFoods: ALLERGEN_FIRST_FOOD, ironStarters: IRON_STARTERS });
   if (!ideas.length) return "";
   const reason = (idea) => {
     if (idea.kind === "due") return `${ALLERGEN_LABEL[idea.allergen]} last offered ${relDays(idea.daysSince)}. Offer it again to keep it in the diet.`;
@@ -366,7 +393,7 @@ function nextCardHTML() {
     <h2 id="next-title">Ideas for next</h2>
     <ul class="next-list">${ideas
       .map((idea) => {
-        const food = FOODS_BY_ID.get(idea.id);
+        const food = foodById(idea.id);
         return `<li><button type="button" class="next-item" data-open="${food.id}">
           <span class="mini-tile" data-cat="${food.cat}" aria-hidden="true">${iconHTML(food)}</span>
           <span><strong>${esc(food.name)}</strong><span class="sub">${esc(reason(idea))}</span></span>
@@ -476,7 +503,7 @@ function smooth() {
 function renderStatusChips() {
   const row = $("#status-chips");
   if (!row) return;
-  const base = FOODS.filter((food) => matchesFilters(food, { skipStatus: true }));
+  const base = foodList.filter((food) => matchesFilters(food, { skipStatus: true }));
   row.innerHTML = STATUS_FILTERS.map((s) => {
     const n = base.filter((food) => matchesStatus(food, s.id)).length;
     return `<button type="button" class="chip" data-status="${s.id}" aria-pressed="${app.filters.status === s.id}">${esc(s.label)} <span class="count">${n}</span></button>`;
@@ -553,7 +580,7 @@ function renderFilterSheet() {
 
 function updateFilterDone() {
   const done = $("#filter-done", filterSheet);
-  if (done) done.textContent = `Show ${plural(FOODS.filter((food) => matchesFilters(food)).length, "food")}`;
+  if (done) done.textContent = `Show ${plural(foodList.filter((food) => matchesFilters(food)).length, "food")}`;
 }
 
 function openFilters() {
@@ -601,6 +628,7 @@ function legendHTML() {
 }
 
 function sortFoods(list) {
+  if (app.filters.sort === "az") return [...list].sort((a, b) => a.name.localeCompare(b.name));
   if (app.filters.sort === "recent") {
     return [...list].sort((a, b) => {
       const da = app.summaries.get(a.id)?.lastDate || "";
@@ -616,7 +644,7 @@ function renderFoodResults() {
   const box = $("#food-results");
   if (!box) return;
   renderStatusChips();
-  const list = sortFoods(FOODS.filter((food) => matchesFilters(food)));
+  const list = sortFoods(foodList.filter((food) => matchesFilters(food)));
   const tried = list.filter((food) => app.summaries.has(food.id)).length;
   renderFilterBar();
   main.classList.toggle("is-loading", loading());
@@ -624,12 +652,16 @@ function renderFoodResults() {
   const groups = app.filters.sort === "category" ? CATEGORIES.map((c) => ({ ...c, foods: list.filter((food) => food.cat === c.id) })).filter((g) => g.foods.length) : [];
   renderCatJump(groups);
   requestAnimationFrame(updateScrollUI);
+  // Searching for something that isn't listed: offer to add it.
+  const q = app.filters.q.trim();
+  const addOwn = q && canWrite() ? `<button type="button" class="btn btn-small${list.length ? "" : " btn-primary"}" data-action="add-food" data-name="${esc(q)}">${ICON.plus}Add “${esc(q)}” as your own food</button>` : "";
   if (!list.length) {
-    box.innerHTML = `${line}<div class="empty"><strong>No foods match</strong>Try a different search, or clear the filters.<div style="margin-top:12px"><button type="button" class="btn btn-small" data-action="clear-filters">Clear filters</button></div></div>`;
+    box.innerHTML = `${line}<div class="empty"><strong>No foods match</strong>Try a different search, or clear the filters.<div class="button-row empty-actions">${addOwn}<button type="button" class="btn btn-small" data-action="clear-filters">Clear filters</button></div></div>`;
     return;
   }
+  const after = addOwn ? `<p class="add-own">Not the one you meant? ${addOwn}</p>` : "";
   if (!groups.length) {
-    box.innerHTML = `${line}<div class="grid">${list.map(tileHTML).join("")}</div>`;
+    box.innerHTML = `${line}<div class="grid">${list.map(tileHTML).join("")}</div>${after}`;
     return;
   }
   box.innerHTML =
@@ -642,7 +674,8 @@ function renderFoodResults() {
           <div class="grid">${g.foods.map(tileHTML).join("")}</div>
         </section>`;
       })
-      .join("");
+      .join("") +
+    after;
 }
 
 // ---------- food sheet ----------
@@ -651,10 +684,14 @@ function factsHTML(food) {
   const facts = [];
   if (food.age == null) facts.push('<span class="fact fact-bad">Avoid for young children</span>');
   else facts.push(`<span class="fact${isWaiting(food) ? " fact-warn" : " fact-good"}">${esc(L.formatAgeRule(food))}</span>`);
-  const choke = CHOKING[food.choking];
-  facts.push(`<span class="fact ${food.choking === "high" ? "fact-bad" : food.choking === "prep" ? "fact-warn" : ""}">${esc(choke.label)}</span>`);
+  // A family food without listed ingredients has no known choking risk.
+  if (food.choking) {
+    const choke = CHOKING[food.choking];
+    facts.push(`<span class="fact ${food.choking === "high" ? "fact-bad" : food.choking === "prep" ? "fact-warn" : ""}">${esc(choke.label)}</span>`);
+  }
   if (food.iron) facts.push('<span class="fact fact-iron">Iron-rich</span>');
   for (const a of food.allergens) facts.push(`<span class="fact fact-warn">Allergen: ${esc(ALLERGEN_LABEL[a])}</span>`);
+  for (const a of food.mayContain || []) facts.push(`<span class="fact">May contain: ${esc(ALLERGEN_LABEL[a].toLowerCase())}</span>`);
   return `<div class="facts">${facts.join("")}</div>`;
 }
 
@@ -663,15 +700,29 @@ function statusLineHTML(food) {
   const s = app.summaries.get(food.id);
   if (!s) return loading() ? '<span class="skeleton skeleton-line" role="status"><span class="visually-hidden">Loading your log…</span></span>' : loadError() ? "<p>Your log didn't load.</p>" : "";
   const pastReaction = s.status !== "reaction" && s.lastReactionDate;
+  // Reactions after a meal this food was in: a caution, not a verdict.
+  const mealReactions = (s.mealReactions || [])
+    .filter((r) => foodById(r.mealId))
+    .map((r) => `<span class="reaction-note">Reaction noted on ${esc(fmtDate(r.date))} after ${esc(foodById(r.mealId).name)}, which has ${esc(food.name.toLowerCase())} in it</span>`);
   return `<span class="status-pill st-${s.status}${app.popFood === food.id ? " pop" : ""}">${MARK[s.status]}${esc(STATUS_LABEL[s.status])}</span>
-    <span>Tried ${plural(s.count, "time")}, last on ${esc(fmtDate(s.lastDate))}</span>
-    ${pastReaction ? `<span class="reaction-note">Reaction noted on ${esc(fmtDate(s.lastReactionDate))}</span>` : ""}`;
+    <span>Tried ${plural(s.count, "time")}${s.mealCount ? ` (${s.mealCount} in meals)` : ""}, last on ${esc(fmtDate(s.lastDate))}</span>
+    ${pastReaction ? `<span class="reaction-note">Reaction noted on ${esc(fmtDate(s.lastReactionDate))}</span>` : ""}
+    ${mealReactions.join("")}`;
+}
+
+// The family's own foods that have this one in them.
+function mealsWith(food) {
+  return foodList.filter((f) => f.custom && f.ingredients.includes(food.id));
 }
 
 function historyHTML(food) {
   const logs = L.logsForFood(app.state, food.id).reverse();
-  if (!logs.length) return "";
-  return `<h3>Our tries</h3><ul class="history">${logs
+  const meals = mealsWith(food);
+  const inMeals = meals.length
+    ? `<p class="in-meals">Also in your foods: ${meals.map((m) => `<button type="button" class="chip chip-link" data-open="${m.id}">${esc(m.name)}</button>`).join("")}</p>`
+    : "";
+  if (!logs.length) return inMeals ? `<h3>Our tries</h3>${inMeals}` : "";
+  return `<h3>Our tries</h3>${inMeals}<ul class="history">${logs
     .map((log) => {
       const who = whoLogged(log);
       const details = [log.served && `Served: ${esc(log.served)}`, log.notes && esc(log.notes), who && `Logged by ${esc(who)}`].filter(Boolean);
@@ -745,18 +796,37 @@ function serveHTML(food) {
   </section>`;
 }
 
+// What's in a family food, its label and notes, and buttons to change it.
+function customFoodHTML(food) {
+  const parts = food.ingredients.map((id) => foodById(id)).filter(Boolean);
+  const inside = parts.length
+    ? `<section><h3>What's in it</h3>
+        <div class="ingredient-list">${parts.map((f) => `<button type="button" class="ingredient" data-open="${f.id}"><span class="mini-tile" data-cat="${f.cat}" aria-hidden="true">${iconHTML(f)}</span>${esc(f.name)}</button>`).join("")}</div>
+        <p class="muted">Each try of ${esc(food.name)} also counts as a try of these. Open one for how to serve it safely.</p>
+      </section>`
+    : `<section><h3>How to serve it</h3><p>There's no serving guide for foods you add. See <a href="#guide" data-jump-guide="sizes">Sizes and shapes by age</a> in the Guide, or ask your pediatrician.</p></section>`;
+  return `${inside}
+    ${food.label ? `<section><h3>Ingredients on the label</h3><p class="label-text">${esc(food.label)}</p></section>` : ""}
+    ${food.notes ? `<section><h3>Notes</h3><p class="label-text">${esc(food.notes)}</p></section>` : ""}
+    ${canWrite() ? `<div class="button-row">
+      <button type="button" class="btn btn-small" data-action="edit-food" data-food="${food.id}">Edit food</button>
+      <button type="button" class="btn btn-small btn-danger" data-action="delete-food" data-food="${food.id}">Delete food</button>
+    </div>` : ""}`;
+}
+
 function renderSheet() {
-  const food = FOODS_BY_ID.get(app.openFoodId);
+  const food = foodById(app.openFoodId);
   if (!food) return;
+  app.sheetSource = food.source || null;
   const ssUrl = food.ss ? `https://solidstarts.com/foods/${encodeURIComponent(food.ss)}/` : null;
   const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(`site:solidstarts.com ${food.name} for babies`)}`;
   setDialogHTML(sheet, `
     <header class="sheet-head">
       <div class="big-tile" data-cat="${food.cat}" aria-hidden="true">${iconHTML(food)}</div>
       <div class="sheet-title">
-        <p class="eyebrow">${esc(CAT_LABEL[food.cat])}</p>
+        <p class="eyebrow">${esc(CAT_LABEL[food.cat])}${food.custom ? " · Your food" : ""}</p>
         <h2 id="sheet-title" tabindex="-1">${esc(food.name)}</h2>
-        ${food.aka.length ? `<p class="muted">Also: ${esc(food.aka.join(", "))}</p>` : ""}
+        ${food.custom ? (food.brand ? `<p class="muted">${esc(food.brand)}</p>` : "") : food.aka.length ? `<p class="muted">Also: ${esc(food.aka.join(", "))}</p>` : ""}
       </div>
       <button type="button" class="sheet-close" data-action="close-sheet" aria-label="Close">${ICON.close}</button>
     </header>
@@ -764,12 +834,12 @@ function renderSheet() {
       ${factsHTML(food)}
       ${food.wait ? `<div class="wait-box${food.age == null ? " is-avoid" : ""}"><strong>${food.age == null ? "Avoid." : `Wait until ${esc(L.formatAgeRule(food).replace("From ", ""))}.`}</strong> ${esc(food.wait)}</div>` : ""}
       <div class="log-status" id="sheet-status" aria-label="Our log"></div>
-      ${serveHTML(food)}
+      ${food.custom ? customFoodHTML(food) : serveHTML(food)}
       ${food.tips.length ? `<section><h3>Good to know</h3><ul class="tips">${food.tips.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></section>` : ""}
       <section id="sheet-log" aria-label="Our tries"></section>
-      <div class="source-links">
+      ${food.custom ? "" : `<div class="source-links">
         ${ssUrl ? `<a href="${ssUrl}" target="_blank" rel="noopener">Full guide on Solid Starts ↗</a>` : `<a href="${searchUrl}" target="_blank" rel="noopener">Search Solid Starts for ${esc(food.name.toLowerCase())} ↗</a>`}
-      </div>
+      </div>`}
       <p class="disclaimer">General guidance only. Every baby is different; check with your pediatrician, especially about allergies.</p>
     </div>
     ${sheetFootHTML(food)}`);
@@ -801,6 +871,309 @@ function closeFood() {
     history.back();
   } else {
     location.replace(`#${app.view}`);
+  }
+}
+
+// ---------- adding the family's own foods ----------
+
+// While the form is open: the food's id (when editing), what's in it, and
+// the allergens ticked by hand.
+let ff = null;
+
+function capitalize(text) {
+  return text ? text[0].toUpperCase() + text.slice(1) : text;
+}
+
+function openFoodForm({ id = null, name = "" } = {}) {
+  if (!canWrite()) return;
+  const existing = id ? app.state.foods[id] : null;
+  ff = {
+    id: existing ? existing.id : null,
+    ingredients: existing ? [...existing.ingredients] : [],
+    allergens: new Set(existing ? existing.allergens : []),
+    mayContain: new Set(existing ? existing.mayContain : []),
+  };
+  const cat = existing ? existing.cat : "mixed";
+  setDialogHTML(foodForm, `
+    <form class="log-form" id="food-form-el" novalidate>
+      <header class="sheet-head">
+        <div class="big-tile big-tile-small" id="ff-tile" data-cat="${cat}" aria-hidden="true"></div>
+        <div class="sheet-title"><p class="eyebrow">${existing ? "Edit your food" : "Add a food"}</p><h2 id="ff-title" tabindex="-1">${existing ? esc(existing.name) : "New food"}</h2></div>
+        <button type="button" class="sheet-close" data-action="close-food-form" aria-label="Close">${ICON.close}</button>
+      </header>
+      <div class="form">
+        <div id="ff-reader">${labelReaderHTML()}</div>
+        <div class="field">
+          <label for="ff-name">Name</label>
+          <input class="input" id="ff-name" name="foodname" maxlength="60" autocomplete="off" required value="${esc(existing ? existing.name : capitalize(name))}" placeholder="e.g. Potato & beef purée, kangaroo">
+        </div>
+        <fieldset class="field">
+          <legend>Category</legend>
+          <div class="choice-row">${CATEGORIES.map((c) => `<label class="choice"><input type="radio" name="cat" value="${c.id}"${c.id === cat ? " checked" : ""}><span>${esc(c.label)}</span></label>`).join("")}</div>
+        </fieldset>
+        <fieldset class="field">
+          <legend>What's in it? <span class="muted">(optional)</span></legend>
+          <p class="hint">Pick foods from the list. Logging this then counts as a try of each, and their age, choking and allergen advice carries over.</p>
+          <div class="choice-row" id="ff-picked"></div>
+          <div class="search search-small">
+            ${ICON.search}
+            <label class="visually-hidden" for="ff-ing">Find an ingredient</label>
+            <input id="ff-ing" type="search" autocomplete="off" enterkeyhint="search" placeholder="Add an ingredient, e.g. potato">
+          </div>
+          <div class="choice-row" id="ff-ing-results"></div>
+        </fieldset>
+        <fieldset class="field">
+          <legend>Allergens</legend>
+          <p class="hint">Ingredients you picked tick their own. Add any others the label lists.</p>
+          <div class="choice-row" id="ff-allergens"></div>
+          <details class="ff-may"${ff.mayContain.size ? " open" : ""}>
+            <summary>The label says “may contain”…</summary>
+            <div class="choice-row" id="ff-may"></div>
+          </details>
+        </fieldset>
+        <div class="field">
+          <label for="ff-brand">Brand <span class="muted">(optional)</span></label>
+          <input class="input" id="ff-brand" name="brand" maxlength="60" autocomplete="off" value="${esc(existing ? existing.brand : "")}">
+        </div>
+        <div class="field">
+          <label for="ff-label">Ingredients on the label <span class="muted">(optional)</span></label>
+          <textarea class="input" id="ff-label" name="label" maxlength="2000" placeholder="e.g. Potato (60%), beef (25%), water, onion">${esc(existing ? existing.label : "")}</textarea>
+        </div>
+        <div class="field">
+          <label for="ff-notes">Notes <span class="muted">(optional)</span></label>
+          <textarea class="input" id="ff-notes" name="notes" maxlength="1000" placeholder="How you serve it, where you buy it…">${esc(existing ? existing.notes : "")}</textarea>
+        </div>
+      </div>
+      <footer class="form-foot">
+        <p class="alert" id="ff-error" role="alert" hidden></p>
+        <div class="form-actions" id="ff-actions">
+          <button type="button" class="btn btn-quiet" data-action="close-food-form">Cancel</button>
+          <button type="submit" class="btn btn-primary">${existing ? "Save changes" : "Add food"}</button>
+        </div>
+        <div class="discard-bar" id="ff-discard" hidden>
+          <p><strong>Discard ${existing ? "your changes" : "this food"}?</strong> What you've entered won't be saved.</p>
+          <div class="form-actions">
+            <button type="button" class="btn btn-quiet" data-action="ff-keep">Keep editing</button>
+            <button type="button" class="btn btn-danger" data-action="ff-discard">Discard</button>
+          </div>
+        </div>
+      </footer>
+    </form>`);
+  updateFoodFormParts();
+  foodForm.dataset.initial = foodFormSnapshot();
+  if (!foodForm.open) foodForm.showModal();
+  $(existing || name ? "#ff-title" : "#ff-name", foodForm).focus();
+}
+
+// Reading a label needs Firebase (it goes through your own project) and the
+// reCAPTCHA key that switches it on.
+function labelReaderHTML() {
+  if (!app.store || app.store.mode !== "cloud") return "";
+  if (!app.labelSettings) {
+    return `<p class="form-note">${ICON.camera}Reading labels from a photo isn't switched on yet. See “Reading food labels from a photo” in the README.</p>`;
+  }
+  return `<div class="label-reader">
+    <label class="btn btn-primary" for="ff-photo" id="ff-photo-btn">${ICON.camera}Read a label from a photo</label>
+    <input type="file" id="ff-photo" accept="image/*" capture="environment" class="visually-hidden">
+    <p class="hint">Photograph the ingredients and allergen statement. Google's Gemini reads the photo and fills in the form for you to check. Protected by reCAPTCHA: Google's <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Terms</a> apply.</p>
+    <div id="ff-read-status" role="status"></div>
+  </div>`;
+}
+
+// Shrink a photo to a JPEG the model can read quickly (about 1600px on the
+// long side), as base64.
+async function photoToJPEG(file, longest = 1600) {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, longest / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+async function readLabelPhoto(file) {
+  const status = $("#ff-read-status", foodForm);
+  const button = $("#ff-photo-btn", foodForm);
+  status.innerHTML = '<p class="reading"><span class="spinner" aria-hidden="true"></span>Reading the label…</p>';
+  button.classList.add("is-busy");
+  try {
+    const base64 = await photoToJPEG(file);
+    const answer = await readLabelImage(app.cloudApi, app.labelSettings, { prompt: LABEL_PROMPT, schema: labelSchema, model: LABEL_MODEL }, base64);
+    const read = parseLabel(answer, FOODS);
+    if (!read.readable) throw Object.assign(new Error("No label in the photo"), { code: "unreadable" });
+    if (!foodForm.open || !ff) return;
+    applyLabel(read);
+    const notes = [];
+    if (read.spotted.length) notes.push(`Also ticked ${read.spotted.map((a) => ALLERGEN_LABEL[a].toLowerCase()).join(", ")}, from words in the ingredients.`);
+    if (read.unmatched.length) notes.push(`Not in the food list, so not counted: ${read.unmatched.join(", ")}.`);
+    status.innerHTML = `<div class="form-note read-ok"><p><strong>Filled in from the label.</strong> Check everything against the pack before saving.</p>${notes.map((n) => `<p>${esc(n)}</p>`).join("")}</div>`;
+  } catch (err) {
+    console.error(err);
+    status.innerHTML = `<p class="alert">${esc(describeLabelError(err))}</p>`;
+  } finally {
+    button.classList.remove("is-busy");
+  }
+}
+
+// Fill the form from what was read, keeping anything already typed in.
+function applyLabel(read) {
+  const form = $("#food-form-el", foodForm);
+  if (read.name && !form.foodname.value.trim()) form.foodname.value = read.name;
+  if (read.brand && !form.brand.value.trim()) form.brand.value = read.brand;
+  if (read.category) form.cat.value = read.category;
+  if (read.ingredientsText) form.label.value = read.ingredientsText;
+  for (const id of read.ingredientIds) if (!ff.ingredients.includes(id)) ff.ingredients.push(id);
+  for (const a of read.contains) ff.allergens.add(a);
+  for (const a of read.mayContain) ff.mayContain.add(a);
+  if (read.otherAllergens.length) {
+    const extra = `The label also lists: ${read.otherAllergens.join(", ")}.`;
+    if (!form.notes.value.includes(extra)) form.notes.value = [form.notes.value.trim(), extra].filter(Boolean).join("\n");
+  }
+  if (read.mayContain.length) $(".ff-may", form).open = true;
+  $("#ff-title", foodForm).textContent = form.foodname.value.trim() || "New food";
+  updateFoodFormParts();
+}
+
+// Allergens the picked ingredients bring, with the first food that brings each.
+function ingredientAllergens() {
+  const from = new Map();
+  for (const id of ff.ingredients) for (const a of FOODS_BY_ID.get(id).allergens) if (!from.has(a)) from.set(a, FOODS_BY_ID.get(id).name);
+  return from;
+}
+
+function updateFoodFormParts() {
+  const form = $("#food-form-el", foodForm);
+  if (!form) return;
+  const cat = form.cat.value || "mixed";
+  const parts = ff.ingredients.map((id) => FOODS_BY_ID.get(id));
+  $("#ff-picked", form).innerHTML = parts
+    .map((f) => `<button type="button" class="chip chip-on" data-action="ff-remove" data-id="${f.id}" aria-label="Remove ${esc(f.name)}">${esc(f.name)}${ICON.close}</button>`)
+    .join("");
+  const from = ingredientAllergens();
+  $("#ff-allergens", form).innerHTML = ALLERGENS.map((a) => {
+    const auto = from.get(a.id);
+    return `<button type="button" class="chip" data-action="ff-allergen" data-allergen="${a.id}" aria-pressed="${!!auto || ff.allergens.has(a.id)}"${auto ? " disabled" : ""}>${esc(a.label)}${auto ? ` <span class="count">from ${esc(auto.toLowerCase())}</span>` : ""}</button>`;
+  }).join("");
+  $("#ff-may", form).innerHTML = ALLERGENS.map((a) => `<button type="button" class="chip" data-action="ff-may" data-allergen="${a.id}" aria-pressed="${ff.mayContain.has(a.id)}">${esc(a.label)}</button>`).join("");
+  const preview = L.expandCustomFood({ id: "my-preview", name: "", cat, ingredients: ff.ingredients, allergens: [], mayContain: [], brand: "", notes: "", label: "" }, FOODS_BY_ID, CATEGORY_ICONS);
+  const tile = $("#ff-tile", form);
+  tile.dataset.cat = cat;
+  tile.innerHTML = iconHTML(preview);
+  renderIngredientResults();
+}
+
+function renderIngredientResults() {
+  const box = $("#ff-ing-results", foodForm);
+  const q = $("#ff-ing", foodForm).value;
+  const nq = L.normalizeText(q);
+  if (!nq) {
+    box.innerHTML = "";
+    return;
+  }
+  const starts = (f) => (L.normalizeText(f.name).startsWith(nq) ? 0 : 1);
+  const matches = FOODS.filter((f) => !ff.ingredients.includes(f.id) && L.matchesQuery(f, q))
+    .sort((a, b) => starts(a) - starts(b) || a.name.localeCompare(b.name))
+    .slice(0, 8);
+  box.innerHTML = matches.length
+    ? matches.map((f) => `<button type="button" class="chip" data-action="ff-add" data-id="${f.id}">${ICON.plus}${esc(f.name)}</button>`).join("")
+    : `<p class="hint">Nothing in the food list matches. That's fine: just leave it out.</p>`;
+}
+
+function foodFormSnapshot() {
+  const form = $("#food-form-el", foodForm);
+  if (!form || !ff) return "";
+  return JSON.stringify([form.foodname.value, form.cat.value, form.brand.value, form.label.value, form.notes.value, ff.ingredients, [...ff.allergens].sort(), [...ff.mayContain].sort()]);
+}
+
+function setFoodFormDiscard(show) {
+  $("#ff-discard", foodForm).hidden = !show;
+  $("#ff-actions", foodForm).hidden = show;
+  if (show) $("#ff-error", foodForm).hidden = true;
+  $(show ? '[data-action="ff-keep"]' : '[type="submit"]', foodForm).focus();
+}
+
+function requestCloseFoodForm() {
+  if (!foodForm.open) return;
+  if (foodFormSnapshot() === foodForm.dataset.initial) foodForm.close();
+  else setFoodFormDiscard(true);
+}
+
+function showFoodFormError(message, field) {
+  const el = $("#ff-error", foodForm);
+  el.textContent = message;
+  el.hidden = false;
+  if (field) {
+    field.scrollIntoView({ block: "center", behavior: smooth() });
+    field.focus({ preventScroll: true });
+  }
+}
+
+async function submitFoodForm(form) {
+  // (form.name is the form's own name, so the field is called foodname.)
+  const name = form.foodname.value.trim();
+  if (!name) return showFoodFormError("Give the food a name.", form.foodname);
+  const clash = FOODS.find((f) => L.normalizeText(f.name) === L.normalizeText(name));
+  if (clash) return showFoodFormError(`${clash.name} is already in the food list. Search for it on the Foods tab.`, form.foodname);
+  const existing = ff.id ? app.state.foods[ff.id] : null;
+  const now = Date.now();
+  // Only allergens ticked by hand are kept: the ingredients' own are worked
+  // out each time, so they stay right if the ingredients change.
+  const from = ingredientAllergens();
+  const food = L.cleanCustomFood(
+    {
+      ...(existing || {}),
+      id: existing ? existing.id : L.newCustomId(name),
+      name,
+      cat: form.cat.value,
+      ingredients: ff.ingredients,
+      allergens: [...ff.allergens].filter((a) => !from.has(a)),
+      mayContain: [...ff.mayContain],
+      brand: form.brand.value,
+      label: form.label.value,
+      notes: form.notes.value,
+      createdAt: existing ? existing.createdAt : now,
+      updatedAt: now,
+    },
+    KNOWN_IDS,
+  );
+  const submit = form.querySelector('[type="submit"]');
+  submit.disabled = true;
+  try {
+    await app.store.saveFood(food);
+    foodForm.close();
+    if (existing) {
+      toast("Saved changes", { undo: () => app.store.saveFood(existing) });
+    } else {
+      toast(`Added ${food.name}`, { undo: () => app.store.deleteFood(food.id) });
+      openFood(food.id);
+    }
+  } catch (err) {
+    showFoodFormError(describeStoreError(err));
+  } finally {
+    submit.disabled = false;
+  }
+}
+
+// Deleting a family food takes its tries with it; Undo puts them all back.
+async function deleteFood(id) {
+  const food = app.state.foods[id];
+  if (!food) return;
+  const logs = Object.fromEntries(Object.entries(app.state.logs).filter(([, l]) => l.foodId === id));
+  const queued = app.state.queue[id];
+  closeFood();
+  try {
+    await app.store.deleteFood(id);
+    const n = Object.keys(logs).length;
+    toast(`Deleted ${food.name}${n ? ` and its ${plural(n, "try", "tries")}` : ""}`, {
+      undo: () => app.store.importBackup({ app: "first-bites", foods: { [id]: food }, logs, queue: queued ? { [id]: queued } : {} }),
+    });
+  } catch (err) {
+    toast(describeStoreError(err));
   }
 }
 
@@ -846,7 +1219,7 @@ function phoneOnlyNoteHTML() {
 // the full form in the same dialog.
 function openQuickLog(foodId) {
   if (!canWrite()) return;
-  const food = FOODS_BY_ID.get(foodId);
+  const food = foodById(foodId);
   setDialogHTML(logDialog, `
     <header class="sheet-head">
       <div class="big-tile big-tile-small" data-cat="${food.cat}" aria-hidden="true">${iconHTML(food)}</div>
@@ -884,7 +1257,7 @@ async function quickSave(button) {
   try {
     await app.store.saveLog({ id, foodId, date: L.todayISO(), outcome, reactions: [], served: "", notes: "", createdAt: now, updatedAt: now });
     logDialog.close();
-    toast(`Saved: ${FOODS_BY_ID.get(foodId).name}, ${OUTCOME_LABEL[outcome].toLowerCase()}`, { undo: () => app.store.deleteLog(id) });
+    toast(`Saved: ${foodById(foodId).name}, ${OUTCOME_LABEL[outcome].toLowerCase()}`, { undo: () => app.store.deleteLog(id) });
   } catch (err) {
     for (const b of logDialog.querySelectorAll(".face-btn")) b.disabled = false;
     toast(describeStoreError(err));
@@ -893,7 +1266,7 @@ async function quickSave(button) {
 
 function openLogDialog(foodId, logId, { reaction = false } = {}) {
   if (!canWrite()) return;
-  const food = FOODS_BY_ID.get(foodId);
+  const food = foodById(foodId);
   const existing = logId ? app.state.logs[logId] : null;
   const log = existing || { date: L.todayISO(), outcome: "", reactions: [], served: "", notes: "" };
   const hasReaction = reaction || (log.reactions || []).length > 0;
@@ -1052,7 +1425,7 @@ async function submitLog(form) {
   try {
     await app.store.saveLog(log);
     logDialog.close();
-    const food = FOODS_BY_ID.get(foodId);
+    const food = foodById(foodId);
     toast(reactions.length ? `Saved ${food.name} with a reaction noted` : `Saved: ${food.name}, ${OUTCOME_LABEL[outcome].toLowerCase()}`, {
       undo: existing ? () => app.store.saveLog(existing) : () => app.store.deleteLog(log.id),
     });
@@ -1079,7 +1452,7 @@ async function toggleQueue(foodId) {
   const on = !app.state.queue[foodId];
   try {
     await app.store.setQueued(foodId, on);
-    toast(on ? `Added ${FOODS_BY_ID.get(foodId).name} to your to-try list` : "Removed from your to-try list", { undo: () => app.store.setQueued(foodId, !on) });
+    toast(on ? `Added ${foodById(foodId).name} to your to-try list` : "Removed from your to-try list", { undo: () => app.store.setQueued(foodId, !on) });
   } catch (err) {
     toast(describeStoreError(err));
   }
@@ -1129,22 +1502,23 @@ function renderProgress() {
     main.innerHTML = `${head('<span class="visually-hidden" role="status">Loading your tracker…</span>')}${progressSkeletonHTML()}`;
     return;
   }
-  const tried = app.summaries.size;
+  const tried = triedFoods().size;
   const target = goal();
   const all = [...app.summaries.values()];
   const totalTries = all.reduce((n, s) => n + s.count, 0);
   const count = (status) => all.filter((s) => s.status === status).length;
   const reactions = count("reaction");
-  const beforeOne = L.triedBeforeFirstBirthday(app.summaries, app.state.profile.birthDate);
-  const allergens = L.allergenProgress(FOODS, app.summaries);
+  const beforeOne = L.triedBeforeFirstBirthday(triedFoods(), app.state.profile.birthDate);
+  const allergens = L.allergenProgress(foodList, app.summaries);
   const introduced = allergens.filter((a) => a.state !== "new").length;
   const notYet = allergens.filter((a) => a.state === "new");
-  const cats = L.categoryProgress(FOODS, app.summaries);
+  const cats = L.categoryProgress(foodList, app.summaries).filter((c) => c.total);
   const queue = Object.values(app.state.queue)
     .sort((a, b) => a.addedAt - b.addedAt)
-    .map((q) => FOODS_BY_ID.get(q.foodId))
+    .map((q) => foodById(q.foodId))
     .filter(Boolean);
   const recent = Object.values(app.state.logs)
+    .filter((log) => foodById(log.foodId))
     .sort((a, b) => (a.date === b.date ? (b.createdAt || 0) - (a.createdAt || 0) : a.date < b.date ? 1 : -1))
     .slice(0, 20);
 
@@ -1170,7 +1544,7 @@ function renderProgress() {
         .map(
           ([date, logs]) => `<h3 class="day-head">${esc(dayLabel(date))}</h3><ul class="activity">${logs
             .map((log) => {
-              const food = FOODS_BY_ID.get(log.foodId);
+              const food = foodById(log.foodId);
               const who = whoLogged(log);
               const bits = [OUTCOME_LABEL[log.outcome], log.reactions?.length ? "reaction noted" : "", log.served, who && `by ${who}`].filter(Boolean);
               return `<li>
@@ -1408,7 +1782,7 @@ function renderSetup() {
       </section>
       <section class="panel">
         <h2>Backup</h2>
-        <p class="muted">A backup holds your baby's details, every logged try and your to-try list.</p>
+        <p class="muted">A backup holds your baby's details, every logged try, your to-try list and the foods you added.</p>
         <div class="button-row">
           <button type="button" class="btn" data-action="export">Export backup</button>
           ${canWrite() ? `<label class="btn" for="import-file">Import backup</label><input type="file" id="import-file" accept="application/json,.json" class="visually-hidden">
@@ -1431,7 +1805,7 @@ function renderSetup() {
       </section>` : ""}
       ${canWrite() ? `<section class="panel">
         <h2>Start over</h2>
-        <p class="muted">Deletes every logged try, the to-try list and your baby's details${local ? " from this phone" : " for both of you"}.</p>
+        <p class="muted">Deletes every logged try, the to-try list, the foods you added and your baby's details${local ? " from this phone" : " for both of you"}.</p>
         <div class="button-row"><button type="button" class="btn btn-danger" data-action="clear-all" aria-expanded="false" aria-controls="clear-box">Delete all data…</button></div>
         <div class="danger-box" id="clear-box" hidden>
           <p id="clear-what"></p>
@@ -1582,7 +1956,8 @@ function toggleClearBox(open) {
   if (!open) return;
   const tries = Object.keys(app.state.logs).length;
   const queued = Object.keys(app.state.queue).length;
-  const what = [plural(tries, "logged try", "logged tries"), queued ? `${plural(queued, "food")} on the to-try list` : "", "your baby's details"].filter(Boolean);
+  const own = Object.keys(app.state.foods || {}).length;
+  const what = [plural(tries, "logged try", "logged tries"), queued ? `${plural(queued, "food")} on the to-try list` : "", own ? plural(own, "food you added", "foods you added") : "", "your baby's details"].filter(Boolean);
   const where = app.store.mode === "local" ? "from this phone" : "from the shared log, so they'll disappear from your partner's phone too";
   $("#clear-what").innerHTML = `<strong>This can't be undone.</strong> It deletes ${esc(what.slice(0, -1).join(", "))} and ${esc(what[what.length - 1])} ${esc(where)}.`;
   $("#clear-confirm").focus();
@@ -1610,9 +1985,10 @@ function renderView() {
 
 function route() {
   const hash = decodeURIComponent(location.hash.slice(1));
+  app.pendingFood = null;
   if (hash.startsWith("food-")) {
     const id = hash.slice(5);
-    if (FOODS_BY_ID.has(id)) {
+    if (foodById(id)) {
       if (!main.hasChildNodes()) {
         renderChrome();
         renderView();
@@ -1620,6 +1996,9 @@ function route() {
       showSheet(id);
       return;
     }
+    // One of the family's foods that hasn't arrived yet (the log is still
+    // loading, or it was just added): show it once it does.
+    if (L.isCustomId(id)) app.pendingFood = id;
   }
   hideSheet();
   const view = VIEWS.includes(hash) ? hash : "foods";
@@ -1639,6 +2018,8 @@ function refresh() {
     // The how-to line is only needed until the first try is logged.
     const intro = $("#foods-intro");
     if (intro) intro.hidden = app.summaries.size > 0;
+    const addFood = $("#add-food-btn");
+    if (addFood) addFood.hidden = !canWrite();
     const next = $("#next-card");
     // Don't redraw a checkbox someone is tapping.
     if (next && !next.contains(document.activeElement)) next.innerHTML = nextCardHTML();
@@ -1648,7 +2029,16 @@ function refresh() {
   } else if (app.view === "progress") renderProgress();
   else if (app.view === "guide") syncReadySigns();
   else if (app.view === "setup") refreshSetup();
-  if (app.openFoodId && sheet.open) refreshSheetLog(FOODS_BY_ID.get(app.openFoodId));
+  if (app.openFoodId && sheet.open) {
+    const food = foodById(app.openFoodId);
+    // A food deleted on the other phone: close its page.
+    if (!food) closeFood();
+    // Redraw a family food's whole page only when the food itself changed.
+    else if (food.custom && food.source !== app.sheetSource) renderSheet();
+    else refreshSheetLog(food);
+  }
+  // A page for one of the family's foods, opened before the log loaded.
+  if (app.pendingFood && foodById(app.pendingFood)) route();
 }
 
 // Resolve the people named on shared log entries.
@@ -1672,7 +2062,7 @@ async function resolveNames() {
 // ---------- events ----------
 
 document.addEventListener("click", (e) => {
-  const t = e.target.closest("[data-action],[data-open],[data-status],[data-stage],[data-goto-allergen],[data-jump],[data-group]");
+  const t = e.target.closest("[data-action],[data-open],[data-status],[data-stage],[data-goto-allergen],[data-jump],[data-jump-guide],[data-group]");
   if (!t) return;
   if (t.dataset.open) {
     e.preventDefault();
@@ -1695,6 +2085,17 @@ document.addEventListener("click", (e) => {
     app.filters = { ...app.filters, allergen: t.dataset.gotoAllergen, status: "all", cat: "all", flag: "all", q: "" };
     if (app.view === "foods") renderFoods();
     location.hash = "foods";
+    return;
+  }
+  if (t.dataset.jumpGuide) {
+    e.preventDefault();
+    location.hash = "guide";
+    setTimeout(() => {
+      const section = document.getElementById(`guide-${t.dataset.jumpGuide}`);
+      if (!section) return;
+      section.open = true;
+      section.scrollIntoView({ behavior: smooth() });
+    }, 60);
     return;
   }
   if (t.dataset.group) {
@@ -1751,6 +2152,42 @@ document.addEventListener("click", (e) => {
     case "open-filters":
       openFilters();
       break;
+    case "add-food":
+      openFoodForm({ name: t.dataset.name || "" });
+      break;
+    case "edit-food":
+      openFoodForm({ id: t.dataset.food });
+      break;
+    case "delete-food":
+      deleteFood(t.dataset.food);
+      break;
+    case "close-food-form":
+      requestCloseFoodForm();
+      break;
+    case "ff-keep":
+      setFoodFormDiscard(false);
+      break;
+    case "ff-discard":
+      foodForm.close();
+      break;
+    case "ff-add":
+      ff.ingredients.push(t.dataset.id);
+      $("#ff-ing", foodForm).value = "";
+      updateFoodFormParts();
+      $("#ff-ing", foodForm).focus();
+      break;
+    case "ff-remove":
+      ff.ingredients = ff.ingredients.filter((id) => id !== t.dataset.id);
+      updateFoodFormParts();
+      break;
+    case "ff-allergen":
+    case "ff-may": {
+      const set = t.dataset.action === "ff-may" ? ff.mayContain : ff.allergens;
+      if (set.has(t.dataset.allergen)) set.delete(t.dataset.allergen);
+      else set.add(t.dataset.allergen);
+      t.setAttribute("aria-pressed", String(set.has(t.dataset.allergen)));
+      break;
+    }
     case "close-filters":
       filterSheet.close();
       break;
@@ -1848,6 +2285,10 @@ document.addEventListener("input", (e) => {
     // Typing in the stuck search bar: bring the first results up under it.
     const below = $(".filters", main).getBoundingClientRect().top - $("#search-bar").getBoundingClientRect().bottom;
     if (below < 0) window.scrollBy(0, below);
+  } else if (e.target.id === "ff-ing") {
+    renderIngredientResults();
+  } else if (e.target.id === "ff-name") {
+    $("#ff-title", foodForm).textContent = e.target.value.trim() || "New food";
   } else if (e.target.id === "log-served") {
     updateServedPicks();
   } else if (e.target.id === "clear-confirm") {
@@ -1857,6 +2298,17 @@ document.addEventListener("input", (e) => {
 
 document.addEventListener("change", (e) => {
   const t = e.target;
+  if (t.id === "ff-photo") {
+    const file = t.files && t.files[0];
+    if (file) readLabelPhoto(file);
+    t.value = "";
+    return;
+  }
+  if (t.form && t.form.id === "food-form-el") {
+    $("#ff-error", foodForm).hidden = true;
+    if (t.name === "cat") updateFoodFormParts();
+    return;
+  }
   if (t.name && t.name.startsWith("f-")) {
     app.filters[t.name.slice(2)] = t.value;
     renderFoodResults();
@@ -1885,6 +2337,9 @@ document.addEventListener("submit", (e) => {
   if (e.target.id === "log-form") {
     e.preventDefault();
     submitLog(e.target);
+  } else if (e.target.id === "food-form-el") {
+    e.preventDefault();
+    submitFoodForm(e.target);
   } else if (e.target.id === "signin-form") {
     e.preventDefault();
     signIn(e.target);
@@ -1913,6 +2368,15 @@ logDialog.addEventListener("click", (e) => {
 
 filterSheet.addEventListener("click", (e) => {
   if (e.target === filterSheet) filterSheet.close();
+});
+
+foodForm.addEventListener("cancel", (e) => {
+  e.preventDefault();
+  requestCloseFoodForm();
+});
+
+foodForm.addEventListener("click", (e) => {
+  if (e.target === foodForm) requestCloseFoodForm();
 });
 
 // Drag a sheet down to close it, like a native bottom sheet. The drag starts
@@ -1977,6 +2441,14 @@ function enableSwipeClose(dialog, { allow = () => true, close }) {
 
 enableSwipeClose(sheet, { close: closeFood });
 enableSwipeClose(filterSheet, { close: () => filterSheet.close() });
+enableSwipeClose(foodForm, {
+  allow: () => {
+    if (foodFormSnapshot() === foodForm.dataset.initial) return true;
+    setFoodFormDiscard(true);
+    return false;
+  },
+  close: () => foodForm.close(),
+});
 enableSwipeClose(logDialog, {
   // Ask before throwing away what's been entered.
   allow: () => {
@@ -2101,6 +2573,7 @@ function attachStore(store) {
       return;
     }
     app.state = state;
+    rebuildFoods();
     app.summaries = L.summarizeAll(state);
     refresh();
     resolveNames();
@@ -2188,8 +2661,9 @@ async function boot() {
   // Read the sync settings before showing this phone's log, so the page
   // knows synced details are on their way and doesn't flash prompts.
   if (store.mode === "local" && !window.claude) {
-    const { config, error } = await readSyncConfig();
+    const { config, error, labels } = await readSyncConfig();
     app.syncConfig = config;
+    app.labelSettings = labels || null;
     app.syncConfigError = error || "";
     if (error) console.error(error);
     if (config) app.cloud = { status: "loading" };

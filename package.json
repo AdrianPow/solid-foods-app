@@ -16,6 +16,6 @@
   "devDependencies": {
     "@iconify-json/fluent-emoji-flat": "1.2.6",
     "esbuild": "0.24.2",
-    "firebase": "10.14.1"
+    "firebase": "13.2.0"
   }
 }

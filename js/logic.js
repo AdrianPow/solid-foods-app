@@ -2,10 +2,107 @@
 
 import { ALLERGENS, ALLERGEN_DUE_DAYS, CATEGORIES, OUTCOMES, STAGES } from "./data/meta.js";
 
+const ALLERGEN_IDS = new Set(ALLERGENS.map((a) => a.id));
+const CATEGORY_IDS = new Set(CATEGORIES.map((c) => c.id));
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function emptyState() {
-  return { logs: {}, queue: {}, profile: {} };
+  return { logs: {}, queue: {}, profile: {}, foods: {} };
+}
+
+// ---------- foods the family adds ----------
+
+// Their ids start with "my-", so they can't clash with the built-in foods.
+const CUSTOM_ID = /^my-[a-z0-9-]{1,60}$/;
+
+export function isCustomId(id) {
+  return typeof id === "string" && CUSTOM_ID.test(id);
+}
+
+export function newCustomId(name) {
+  const slug = normalizeText(name).replace(/ /g, "-").slice(0, 30) || "food";
+  return `my-${slug}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+// Is this food id one a log or to-try entry may point at?
+export function isKnownFoodId(id, knownFoodIds) {
+  return typeof id === "string" && (!knownFoodIds || knownFoodIds.has(id) || isCustomId(id));
+}
+
+const text = (value, max) => (typeof value === "string" ? value.trim().slice(0, max) : "");
+const allergenList = (value) => (Array.isArray(value) ? [...new Set(value.filter((a) => ALLERGEN_IDS.has(a)))] : []);
+
+// Validate a food the family added, from storage or a backup.
+export function cleanCustomFood(raw, knownFoodIds) {
+  if (!raw || typeof raw !== "object" || !isCustomId(raw.id)) return null;
+  const name = text(raw.name, 60);
+  if (!name || !CATEGORY_IDS.has(raw.cat)) return null;
+  const ingredients = Array.isArray(raw.ingredients) ? raw.ingredients.filter((id) => typeof id === "string" && !isCustomId(id) && (!knownFoodIds || knownFoodIds.has(id))) : [];
+  const food = {
+    id: raw.id,
+    name,
+    cat: raw.cat,
+    ingredients: [...new Set(ingredients)].slice(0, 30),
+    allergens: allergenList(raw.allergens),
+    mayContain: allergenList(raw.mayContain),
+    brand: text(raw.brand, 60),
+    notes: text(raw.notes, 1000),
+    label: text(raw.label, 2000),
+    createdAt: Number.isFinite(raw.createdAt) ? raw.createdAt : 0,
+    updatedAt: Number.isFinite(raw.updatedAt) ? raw.updatedAt : 0,
+  };
+  if (typeof raw.by === "string" && raw.by) food.by = raw.by.slice(0, 200);
+  if (typeof raw.byName === "string" && raw.byName) food.byName = raw.byName.slice(0, 60);
+  return food;
+}
+
+const CHOKING_RANK = { low: 0, prep: 1, high: 2 };
+
+// Turn a family food into the same shape as a built-in one. Age, choking
+// risk, iron and allergens come from what's in it, so a pouch with honey
+// says "From 12 months" and one with egg counts as egg.
+export function expandCustomFood(custom, foodsById, categoryIcons) {
+  const parts = custom.ingredients.map((id) => foodsById.get(id)).filter(Boolean);
+  const avoid = parts.filter((f) => f.age == null);
+  const oldest = parts.filter((f) => f.age != null).sort((a, b) => b.age - a.age);
+  const age = avoid.length ? null : Math.max(6, ...parts.map((f) => f.age));
+  let wait = "";
+  if (avoid.length) wait = `Contains ${avoid.map((f) => f.name.toLowerCase()).join(" and ")}, which is best avoided for young children.`;
+  else if (age > 6) {
+    const late = oldest.filter((f) => f.age === age).map((f) => f.name.toLowerCase());
+    wait = `Contains ${late.join(" and ")}, which isn't recommended until ${formatAgeRule({ age }).replace("From ", "")}.`;
+  }
+  const choking = parts.length ? parts.reduce((worst, f) => (CHOKING_RANK[f.choking] > CHOKING_RANK[worst] ? f.choking : worst), "low") : null;
+  const allergens = ALLERGENS.map((a) => a.id).filter((a) => custom.allergens.includes(a) || parts.some((f) => f.allergens.includes(a)));
+  return {
+    id: custom.id,
+    name: custom.name,
+    cat: custom.cat,
+    aka: custom.brand ? [custom.brand] : [],
+    age,
+    wait,
+    allergens,
+    choking,
+    iron: parts.some((f) => f.iron),
+    serve: { 6: "", 9: "", 12: "" },
+    tips: [],
+    ss: null,
+    icon: parts.length === 1 ? parts[0].icon : categoryIcons[custom.cat],
+    custom: true,
+    ingredients: custom.ingredients,
+    mayContain: custom.mayContain.filter((a) => !allergens.includes(a)),
+    brand: custom.brand,
+    notes: custom.notes,
+    label: custom.label,
+    source: custom,
+  };
+}
+
+// Foods tried toward the goal: a family food made of listed foods counts as
+// those foods, not as one more.
+export function countsAsFood(food) {
+  return !!food && !(food.custom && food.ingredients.length);
 }
 
 export function todayISO(now = new Date()) {
@@ -101,7 +198,9 @@ export function logsForFood(state, foodId) {
 
 // status: "new" | "liked" | "learning" | "reaction". The latest try decides
 // it, so a food offered again without symptoms moves on from "reaction"; the
-// earlier reaction stays in reactionCount and lastReactionDate.
+// earlier reaction stays in reactionCount and lastReactionDate. Tries that
+// came from a meal (viaMeal) count too, but a reaction to a meal stays with
+// the meal: here it's only listed in mealReactions.
 export function summarizeLogs(logs) {
   if (!logs.length) return { count: 0, status: "new" };
   const sorted = [...logs].sort(compareLogs);
@@ -118,15 +217,29 @@ export function summarizeLogs(logs) {
     lastOutcome: last.outcome,
     reactionCount: reactions.length,
     lastReactionDate: reactions.length ? reactions[reactions.length - 1].date : null,
+    mealCount: sorted.filter((l) => l.viaMeal).length,
+    mealReactions: sorted.filter((l) => l.mealReaction).map((l) => ({ mealId: l.viaMeal, date: l.date })),
     lovedCount: sorted.filter((l) => l.outcome === "loved").length,
   };
 }
 
 export function summarizeAll(state) {
+  const foods = state.foods || {};
   const grouped = new Map();
+  const add = (id, log) => {
+    if (!grouped.has(id)) grouped.set(id, []);
+    grouped.get(id).push(log);
+  };
   for (const log of Object.values(state.logs)) {
-    if (!grouped.has(log.foodId)) grouped.set(log.foodId, []);
-    grouped.get(log.foodId).push(log);
+    if (!isCustomId(log.foodId)) {
+      add(log.foodId, log);
+      continue;
+    }
+    const food = foods[log.foodId];
+    if (!food) continue; // tries of a food that has since been deleted
+    add(log.foodId, log);
+    // A meal is also a try of each thing in it.
+    for (const id of food.ingredients) add(id, { ...log, reactions: [], viaMeal: log.foodId, mealReaction: (log.reactions || []).length > 0 });
   }
   const out = new Map();
   for (const [foodId, logs] of grouped) out.set(foodId, summarizeLogs(logs));
@@ -222,7 +335,7 @@ export function cleanLog(raw, knownFoodIds) {
   if (!raw || typeof raw !== "object") return null;
   const { id, foodId, date, outcome } = raw;
   if (typeof id !== "string" || !id || id.length > 100) return null;
-  if (typeof foodId !== "string" || (knownFoodIds && !knownFoodIds.has(foodId))) return null;
+  if (!isKnownFoodId(foodId, knownFoodIds)) return null;
   if (typeof date !== "string" || !ISO_DATE.test(date)) return null;
   if (!OUTCOME_IDS.has(outcome)) return null;
   const log = {
@@ -275,15 +388,20 @@ export function mergeBackup(current, backup, knownFoodIds) {
   }
   const queue = { ...current.queue };
   for (const [foodId, entry] of Object.entries(backup.queue || {})) {
-    if (knownFoodIds && !knownFoodIds.has(foodId)) continue;
+    if (!isKnownFoodId(foodId, knownFoodIds)) continue;
     if (!queue[foodId]) queue[foodId] = { foodId, addedAt: Number(entry && entry.addedAt) || 0 };
+  }
+  const foods = { ...(current.foods || {}) };
+  for (const raw of Object.values(backup.foods || {})) {
+    const food = cleanCustomFood(raw, knownFoodIds);
+    if (food && (!foods[food.id] || (food.updatedAt || 0) > (foods[food.id].updatedAt || 0))) foods[food.id] = food;
   }
   const incoming = cleanProfile(backup.profile);
   const profile = { ...current.profile };
   for (const key of Object.keys(incoming)) {
     if (profile[key] === undefined || profile[key] === "") profile[key] = incoming[key];
   }
-  return { state: { logs, queue, profile }, added, updated };
+  return { state: { logs, queue, profile, foods }, added, updated };
 }
 
 export function makeBackup(state, now = new Date()) {
@@ -294,5 +412,6 @@ export function makeBackup(state, now = new Date()) {
     profile: state.profile,
     logs: state.logs,
     queue: state.queue,
+    foods: state.foods || {},
   };
 }

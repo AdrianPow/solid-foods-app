@@ -9,7 +9,7 @@
 // is its own document, so two people logging at once never overwrite each
 // other.
 
-import { cleanLog, cleanProfile, emptyState, mergeBackup } from "./logic.js";
+import { cleanCustomFood, cleanLog, cleanProfile, emptyState, isKnownFoodId, mergeBackup } from "./logic.js";
 
 const STATE_KEY = "first-bites:v1";
 const DEVICE_KEY = "first-bites:device-name";
@@ -71,7 +71,11 @@ function loadLocalState(knownFoodIds) {
     if (log) state.logs[log.id] = log;
   }
   for (const [foodId, entry] of Object.entries(saved.queue || {})) {
-    if (knownFoodIds.has(foodId)) state.queue[foodId] = { foodId, addedAt: Number(entry && entry.addedAt) || 0 };
+    if (isKnownFoodId(foodId, knownFoodIds)) state.queue[foodId] = { foodId, addedAt: Number(entry && entry.addedAt) || 0 };
+  }
+  for (const raw of Object.values(saved.foods || {})) {
+    const food = cleanCustomFood(raw, knownFoodIds);
+    if (food) state.foods[food.id] = food;
   }
   state.profile = cleanProfile(saved.profile);
   return state;
@@ -147,6 +151,23 @@ export class LocalStore extends Emitter {
     this.commit({ ...this.state, profile: { ...this.state.profile, ...patch } });
   }
 
+  async saveFood(food) {
+    const entry = { ...food, byName: food.byName ?? getDeviceName() };
+    if (!entry.byName) delete entry.byName;
+    this.commit({ ...this.state, foods: { ...this.state.foods, [food.id]: entry } });
+  }
+
+  async deleteFood(id) {
+    const { logIds } = linkedTo(this.state, id);
+    const foods = { ...this.state.foods };
+    const logs = { ...this.state.logs };
+    const queue = { ...this.state.queue };
+    delete foods[id];
+    delete queue[id];
+    for (const logId of logIds) delete logs[logId];
+    this.commit({ ...this.state, foods, logs, queue });
+  }
+
   async importBackup(backup) {
     const { state, added, updated } = mergeBackup(this.state, backup, this.knownFoodIds);
     this.commit(state);
@@ -190,7 +211,7 @@ export class SharedStore extends Emitter {
     this.user = user;
     this.knownFoodIds = knownFoodIds;
     this.state = emptyState();
-    this.loaded = { logs: false, queue: false, profile: false };
+    this.loaded = { logs: false, queue: false, profile: false, foods: false };
     this.error = null;
     this.canWrite = true;
     this.onError = () => {};
@@ -198,7 +219,7 @@ export class SharedStore extends Emitter {
   }
 
   get ready() {
-    return this.loaded.logs && this.loaded.queue && this.loaded.profile;
+    return Object.values(this.loaded).every(Boolean);
   }
 
   async start() {
@@ -226,7 +247,7 @@ export class SharedStore extends Emitter {
     this.db.collection("queue").onSnapshot((snap) => {
       const queue = {};
       for (const d of snap.docs) {
-        if (this.knownFoodIds.has(d.id)) queue[d.id] = { foodId: d.id, addedAt: Number(d.data().addedAt) || 0 };
+        if (isKnownFoodId(d.id, this.knownFoodIds)) queue[d.id] = { foodId: d.id, addedAt: Number(d.data().addedAt) || 0 };
       }
       this.loaded.queue = true;
       this.state = { ...this.state, queue };
@@ -235,6 +256,16 @@ export class SharedStore extends Emitter {
     this.db.doc("meta/profile").onSnapshot((snap) => {
       this.loaded.profile = true;
       this.state = { ...this.state, profile: snap.exists ? cleanProfile(snap.data()) : {} };
+      this.emit();
+    }, fail);
+    this.db.collection("foods").onSnapshot((snap) => {
+      const foods = {};
+      for (const d of snap.docs) {
+        const food = cleanCustomFood({ ...d.data(), id: d.id }, this.knownFoodIds);
+        if (food) foods[food.id] = food;
+      }
+      this.loaded.foods = true;
+      this.state = { ...this.state, foods };
       this.emit();
     }, fail);
   }
@@ -274,8 +305,24 @@ export class SharedStore extends Emitter {
     return this.profileWrite;
   }
 
+  async saveFood(food) {
+    const entry = { ...food };
+    if (!entry.by && this.viewer && this.viewer.id) entry.by = this.viewer.id;
+    await withRetry(() => this.db.collection("foods").doc(food.id).set(entry));
+  }
+
+  async deleteFood(id) {
+    const { logIds, queued } = linkedTo(this.state, id);
+    for (const logId of logIds) await this.deleteLog(logId);
+    if (queued) await this.setQueued(id, false);
+    await withRetry(() => this.db.collection("foods").doc(id).delete());
+  }
+
   async importBackup(backup) {
     const { state, added, updated } = mergeBackup(this.state, backup, this.knownFoodIds);
+    for (const food of Object.values(state.foods)) {
+      if (this.state.foods[food.id] !== food) await withRetry(() => this.db.collection("foods").doc(food.id).set(food));
+    }
     const changed = Object.values(state.logs).filter((l) => this.state.logs[l.id] !== l);
     for (const log of changed) {
       await withRetry(() => this.db.collection("logs").doc(log.id).set(log));
@@ -292,8 +339,18 @@ export class SharedStore extends Emitter {
   async clearAll() {
     for (const id of Object.keys(this.state.logs)) await this.deleteLog(id);
     for (const foodId of Object.keys(this.state.queue)) await this.setQueued(foodId, false);
+    for (const id of Object.keys(this.state.foods)) await withRetry(() => this.db.collection("foods").doc(id).delete());
     await withRetry(() => this.db.doc("meta/profile").delete());
   }
+}
+
+// The tries and to-try entry that go with a family food, so deleting the
+// food takes them too.
+function linkedTo(state, foodId) {
+  return {
+    logIds: Object.values(state.logs).filter((l) => l.foodId === foodId).map((l) => l.id),
+    queued: !!state.queue[foodId],
+  };
 }
 
 // Firestore-backed store for the GitHub Pages version. Writes go to the local
@@ -308,7 +365,7 @@ export class CloudStore extends Emitter {
     this.user = user;
     this.knownFoodIds = knownFoodIds;
     this.state = emptyState();
-    this.loaded = { logs: false, queue: false, profile: false };
+    this.loaded = { logs: false, queue: false, profile: false, foods: false };
     this.error = null;
     this.pendingWrites = false;
     this.onError = () => {};
@@ -316,7 +373,7 @@ export class CloudStore extends Emitter {
   }
 
   get ready() {
-    return this.loaded.logs && this.loaded.queue && this.loaded.profile;
+    return Object.values(this.loaded).every(Boolean);
   }
 
   get email() {
@@ -352,7 +409,7 @@ export class CloudStore extends Emitter {
       fb.onSnapshot(fb.collection(db, "queue"), (snap) => {
         const queue = {};
         for (const d of snap.docs) {
-          if (this.knownFoodIds.has(d.id)) queue[d.id] = { foodId: d.id, addedAt: Number(d.data().addedAt) || 0 };
+          if (isKnownFoodId(d.id, this.knownFoodIds)) queue[d.id] = { foodId: d.id, addedAt: Number(d.data().addedAt) || 0 };
         }
         this.loaded.queue = true;
         this.state = { ...this.state, queue };
@@ -361,6 +418,16 @@ export class CloudStore extends Emitter {
       fb.onSnapshot(fb.doc(db, "meta", "profile"), (snap) => {
         this.loaded.profile = true;
         this.state = { ...this.state, profile: snap.exists() ? cleanProfile(snap.data()) : {} };
+        this.emit();
+      }, fail),
+      fb.onSnapshot(fb.collection(db, "foods"), (snap) => {
+        const foods = {};
+        for (const d of snap.docs) {
+          const food = cleanCustomFood({ ...d.data(), id: d.id }, this.knownFoodIds);
+          if (food) foods[food.id] = food;
+        }
+        this.loaded.foods = true;
+        this.state = { ...this.state, foods };
         this.emit();
       }, fail),
     );
@@ -374,7 +441,7 @@ export class CloudStore extends Emitter {
   restart() {
     this.dispose();
     this.error = null;
-    this.loaded = { logs: false, queue: false, profile: false };
+    this.loaded = { logs: false, queue: false, profile: false, foods: false };
     this.start();
   }
 
@@ -417,6 +484,23 @@ export class CloudStore extends Emitter {
     this.send(fb.setDoc(fb.doc(db, "meta", "profile"), patch, { merge: true }));
   }
 
+  async saveFood(food) {
+    const { fb, db } = this.cloud;
+    const entry = JSON.parse(JSON.stringify({ ...food, by: food.by || this.user.uid, byName: food.byName || this.displayName() }));
+    this.send(fb.setDoc(fb.doc(db, "foods", food.id), entry));
+  }
+
+  // The food, its tries and its to-try entry go together, in one batch.
+  async deleteFood(id) {
+    const { fb, db } = this.cloud;
+    const { logIds, queued } = linkedTo(this.state, id);
+    this.writeAll([
+      ...logIds.map((logId) => (b) => b.delete(fb.doc(db, "logs", logId))),
+      ...(queued ? [(b) => b.delete(fb.doc(db, "queue", id))] : []),
+      (b) => b.delete(fb.doc(db, "foods", id)),
+    ]);
+  }
+
   // Firestore batches hold up to 500 writes.
   writeAll(ops) {
     const { fb, db } = this.cloud;
@@ -431,6 +515,9 @@ export class CloudStore extends Emitter {
     const { fb, db } = this.cloud;
     const { state, added, updated } = mergeBackup(this.state, backup, this.knownFoodIds);
     const ops = [];
+    for (const food of Object.values(state.foods)) {
+      if (this.state.foods[food.id] !== food) ops.push((b) => b.set(fb.doc(db, "foods", food.id), JSON.parse(JSON.stringify(food))));
+    }
     for (const log of Object.values(state.logs)) {
       if (this.state.logs[log.id] !== log) ops.push((b) => b.set(fb.doc(db, "logs", log.id), JSON.parse(JSON.stringify(log))));
     }
@@ -449,6 +536,7 @@ export class CloudStore extends Emitter {
     const ops = [
       ...Object.keys(this.state.logs).map((id) => (b) => b.delete(fb.doc(db, "logs", id))),
       ...Object.keys(this.state.queue).map((id) => (b) => b.delete(fb.doc(db, "queue", id))),
+      ...Object.keys(this.state.foods).map((id) => (b) => b.delete(fb.doc(db, "foods", id))),
       (b) => b.delete(fb.doc(db, "meta", "profile")),
     ];
     this.writeAll(ops);

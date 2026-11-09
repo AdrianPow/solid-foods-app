@@ -2,7 +2,9 @@
 // reference food ids, and filters reference these ids.
 
 // `short` labels the category jump bar on the Foods tab.
+// "mixed" only holds foods the family adds themselves.
 export const CATEGORIES = [
+  { id: "mixed", label: "Meals & mixed foods", short: "Meals" },
   { id: "fruit", label: "Fruits", short: "Fruits" },
   { id: "veg", label: "Vegetables", short: "Veg" },
   { id: "grain", label: "Grains & starches", short: "Grains" },
