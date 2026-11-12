@@ -2,7 +2,7 @@ import { FOODS, FOODS_BY_ID } from "./data/index.js";
 import { CATEGORY_ICONS } from "./data/food-icons.js";
 import { ALLERGENS, ALLERGEN_DUE_DAYS, ALLERGEN_FIRST_FOOD, ALLERGEN_STARTERS, CATEGORIES, CHOKING, DEFAULT_GOAL, IRON_STARTERS, OUTCOMES, REACTIONS, SERVED_STYLES, STAGES } from "./data/meta.js";
 import { GUIDE } from "./data/guide.js";
-import { ICONS, ICON_VIEWBOX } from "./data/icons.js";
+import { ICONS, ICON_OUTLINE, ICON_VIEWBOX } from "./data/icons.js";
 import * as L from "./logic.js";
 import { CloudStore, LocalStore, describeStoreError, getDeviceName, openStore, pruneLocalState, readLocalState, setDeviceName, writeLocalState } from "./store.js";
 import { describeAuthError, describeLabelError, loadCloud, readLabelImage, readSyncConfig } from "./cloud.js";
@@ -210,8 +210,11 @@ function mountIconSprite() {
   document.body.prepend(holder.firstChild);
 }
 
+// Pale icons get a faint outline on the light theme's tiles, and dark icons
+// on the dark theme's (see ICON_OUTLINE in js/data/icons.js).
 function iconHTML(food, cls = "food-icon") {
-  return `<svg class="${cls}" aria-hidden="true" focusable="false"><use href="#ic-${food.icon}"></use></svg>`;
+  const outline = ICON_OUTLINE.pale.has(food.icon) ? " icon-pale" : ICON_OUTLINE.dark.has(food.icon) ? " icon-dark" : "";
+  return `<svg class="${cls}${outline}" aria-hidden="true" focusable="false"><use href="#ic-${food.icon}"></use></svg>`;
 }
 
 function whoLogged(log) {

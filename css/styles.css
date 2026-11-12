@@ -1152,17 +1152,29 @@ h2 > .fold-toggle .chev {
   flex: none;
 }
 
-/* Dark berries and nuts need a faint outline on dark tiles. */
+/* Icons that would fade into their tile get a faint outline: pale ones
+   (white cheeses, tofu, milk) on the light theme's pastel tiles, and dark
+   ones (berries, black beans) on the dark theme's. */
+.icon-pale {
+  filter: drop-shadow(0 0 0.6px rgb(28 37 27 / 0.65));
+}
+
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .food-icon,
-  :root:not([data-theme="light"]) .tile-icon {
-    filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.45));
+  :root:not([data-theme="light"]) .icon-pale {
+    filter: none;
+  }
+
+  :root:not([data-theme="light"]) .icon-dark {
+    filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.5));
   }
 }
 
-:root[data-theme="dark"] .food-icon,
-:root[data-theme="dark"] .tile-icon {
-  filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.45));
+:root[data-theme="dark"] .icon-pale {
+  filter: none;
+}
+
+:root[data-theme="dark"] .icon-dark {
+  filter: drop-shadow(0 0 1px rgb(255 255 255 / 0.5));
 }
 
 .tile-name {

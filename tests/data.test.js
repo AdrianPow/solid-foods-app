@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { FOODS } from "../js/data/index.js";
 import { ALLERGENS, ALLERGEN_FIRST_FOOD, ALLERGEN_STARTERS, CATEGORIES, CHOKING, IRON_STARTERS, OUTCOMES } from "../js/data/meta.js";
 import { GUIDE } from "../js/data/guide.js";
-import { ICONS } from "../js/data/icons.js";
+import { ICONS, ICON_OUTLINE } from "../js/data/icons.js";
 import { FOOD_ICONS } from "../js/data/food-icons.js";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -86,6 +86,22 @@ test("every food has its own icon mapping, and no mapping is stale", () => {
   const ids = new Set(FOODS.map((f) => f.id));
   for (const f of FOODS) assert.ok(FOOD_ICONS[f.id], `${f.id} has an entry in food-icons.js`);
   for (const id of Object.keys(FOOD_ICONS)) assert.ok(ids.has(id), `food-icons.js entry ${id} matches a food`);
+});
+
+// A grid full of one picture can't be scanned by eye. When a category
+// outgrows an icon, give some foods a recolored variant or another icon.
+test("no icon is repeated more than four times in a category", () => {
+  const uses = new Map();
+  for (const f of FOODS) {
+    const key = `${f.cat}: ${f.icon}`;
+    uses.set(key, [...(uses.get(key) || []), f.id]);
+  }
+  for (const [key, ids] of uses) assert.ok(ids.length <= 4, `${key} is used by ${ids.length} foods (${ids.join(", ")})`);
+});
+
+test("outlined icons exist, and none is outlined in both themes", () => {
+  for (const key of [...ICON_OUTLINE.pale, ...ICON_OUTLINE.dark]) assert.ok(ICONS[key], key);
+  for (const key of ICON_OUTLINE.pale) assert.ok(!ICON_OUTLINE.dark.has(key), key);
 });
 
 test("Solid Starts links are slugs, not URLs", () => {

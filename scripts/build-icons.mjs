@@ -35,14 +35,16 @@ const VARIANTS = {
   mangosteen: ["red-apple", "#4a1f3b"],
   persimmon: ["tomato", "#f28a26", "#f8312f"],
   tomatillo: ["tomato", "#9cc24c", "#f8312f"],
-  blackberry: ["blueberries", "#2c1b3c"],
-  raspberry: ["blueberries", "#e3405f"],
-  cranberry: ["blueberries", "#b4192c"],
-  currant: ["blueberries", "#6b1729"],
-  gooseberry: ["blueberries", "#a0cb5c"],
+  // The berries name their own color: the icon's largest shape is a pale
+  // highlight, and shifting from that turns every berry near-black.
+  blackberry: ["blueberries", "#3a2b5e", "#6b438b"],
+  raspberry: ["blueberries", "#e3405f", "#6b438b"],
+  cranberry: ["blueberries", "#c2243a", "#6b438b"],
+  currant: ["blueberries", "#8a1c33", "#6b438b"],
+  gooseberry: ["blueberries", "#a0cb5c", "#6b438b"],
   goji: ["blueberries", "#e95b2b", "#6b438b"],
-  acai: ["blueberries", "#3c204f"],
-  puffs: ["blueberries", "#ead19c"],
+  acai: ["blueberries", "#5a2f6e", "#6b438b"],
+  puffs: ["rosette", "#f0d9a4"],
   raisin: ["grapes", "#5b3524"],
   date: ["beans", "#5c3120"],
   "beans-black": ["beans", "#2e2b2b"],
@@ -88,7 +90,7 @@ const VARIANTS = {
   artichoke: ["leafy-green", "#7b9b6b"],
   zucchini: ["cucumber", "#3f6c2b"],
   pickle: ["cucumber", "#7b8b3b"],
-  okra: ["hot-pepper", "#6ba94b"],
+  okra: ["hot-pepper", "#6ba94b", "#f8312f"],
   beet: ["onion", "#8b1b4b"],
   radish: ["onion", "#e24b6b"],
   turnip: ["onion", "#ede1f1"],
@@ -96,8 +98,10 @@ const VARIANTS = {
   kohlrabi: ["onion", "#a9cd6b"],
   rutabaga: ["onion", "#d9b96b"],
   fennel: ["onion", "#d6e6b4"],
-  daikon: ["carrot", "#f3f0e5"],
-  parsnip: ["carrot", "#ebdaa9"],
+  daikon: ["carrot", "#f3f0e5", "#ff6723"],
+  parsnip: ["carrot", "#ebdaa9", "#ff6723"],
+  leek: ["carrot", "#dfe8b8", "#ff6723"],
+  asparagus: ["carrot", "#6fa84a", "#ff6723"],
   "potato-light": ["potato", "#e4d7b1"],
   taro: ["potato", "#8b7b8b"],
   yam: ["potato", "#6b4b3b"],
@@ -118,6 +122,61 @@ const VARIANTS = {
   "soy-sauce": ["sake", "#3b2519"],
   "duck-egg": ["egg", "#dfeae5"],
   "quail-egg": ["egg", "#e9d9b9"],
+  // Leaves and herbs
+  "leafy-dark": ["leafy-green", "#2f7d4f"],
+  kale: ["leafy-green", "#5f8f7f"],
+  "hearts-of-palm": ["cucumber", "#ece3c6"],
+  "herb-blue": ["herb", "#5aa88a"],
+  mint: ["leaf-fluttering-in-wind", "#35c48d", "#008463"],
+  sage: ["leaf-fluttering-in-wind", "#9fb59c", "#008463"],
+  chives: ["sheaf-of-rice", "#5fa53a"],
+  lemongrass: ["sheaf-of-rice", "#c3d67a"],
+  seaweed: ["coral", "#3f8f5a"],
+  // Spices
+  "spice-dark": ["salt", "#5c3520"],
+  "spice-tan": ["salt", "#c9a56a"],
+  "spice-green": ["salt", "#a9b87a"],
+  nutmeg: ["chestnut", "#8f6243"],
+  vanilla: ["hot-pepper", "#4a2c1e", "#f8312f"],
+  cardamom: ["peanuts", "#9ab86a"],
+  "star-anise": ["rosette", "#8a4f2e"],
+  cinnamon: ["baguette-bread", "#a65e2e", "#f3ad61"],
+  // Grains and baked things
+  "sheaf-brown": ["sheaf-of-rice", "#9a6b3a"],
+  bulgur: ["cooked-rice", "#c9a468", "#ffffff"],
+  millet: ["cooked-rice", "#f2cf4f", "#ffffff"],
+  amaranth: ["cooked-rice", "#efe6c4", "#ffffff"],
+  "bowl-tan": ["bowl-with-spoon", "#c9965a", "#00a6ed"],
+  "bowl-green": ["bowl-with-spoon", "#6dbb6a", "#00a6ed"],
+  muffin: ["cupcake", "#c98f52", "#ff6dc6"],
+  cracker: ["cookie", "#ecd09a", "#f3ad61"],
+  chips: ["potato", "#f1cd62"],
+  // Fish
+  "fish-white": ["fish", "#dfe6ea"],
+  "fish-sand": ["fish", "#cdb588"],
+  "fish-brown": ["fish", "#7d6a55"],
+  "fish-navy": ["fish", "#2f4f85"],
+  // Cheese and milks
+  "cheese-round": ["moon-cake", "#f4eeda"],
+  burrata: ["garlic", "#f6f3ea"],
+  "string-cheese": ["baguette-bread", "#f3edd8", "#f3ad61"],
+  halloumi: ["butter", "#f0dfae"],
+  "cheese-pale": ["cheese-wedge", "#f1e2a6"],
+  "cheese-gold": ["cheese-wedge", "#e8b84a"],
+  "milk-almond": ["glass-of-milk", "#dcbc8e"],
+  "milk-oat": ["glass-of-milk", "#efe2b8"],
+  "milk-soy": ["glass-of-milk", "#cfe0a8"],
+  // Nuts and seeds
+  "seeds-brown": ["beans", "#8a5a32"],
+  "seeds-hemp": ["beans", "#b9b78a"],
+  "seeds-poppy": ["beans", "#3d4763"],
+  walnut: ["chestnut", "#b08a5a"],
+  pecan: ["chestnut", "#8a4a2a"],
+  "brazil-nut": ["chestnut", "#5f4636"],
+  // Cuts of meat
+  bison: ["cut-of-meat", "#8a2b2b"],
+  venison: ["cut-of-meat", "#6e2a3a"],
+  veal: ["cut-of-meat", "#dc8f84"],
 };
 
 // ---- color helpers ----
@@ -187,6 +246,32 @@ function recolor(body, target, source) {
   });
 }
 
+// How much of an icon is very pale or very dark, judged like dominantColor.
+// Pale icons fade into the light theme's pastel tiles, and dark ones into the
+// dark theme's tiles, so the app gives those a faint outline.
+function luminance(hex) {
+  const [r, g, b] = hexToRgb(hex).map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function tone(body) {
+  let total = 0;
+  let pale = 0;
+  let dark = 0;
+  const add = (hex, weight) => {
+    const lum = luminance(hex);
+    total += weight;
+    if (lum > 0.62) pale += weight;
+    if (lum < 0.08) dark += weight;
+  };
+  for (const m of body.matchAll(/fill="(#[0-9a-fA-F]{3,6})"(?:[^>]*?) d="([^"]*)"|d="([^"]*)"(?:[^>]*?) fill="(#[0-9a-fA-F]{3,6})"/g)) add(m[1] || m[4], (m[2] || m[3]).length);
+  for (const m of body.matchAll(/<(?:circle|ellipse|rect)[^>]*fill="(#[0-9a-fA-F]{3,6})"/g)) add(m[1], 120);
+  return { pale: pale / total, dark: dark / total };
+}
+
+// Pale icons the measure above misses, because a small colored part (a leaf,
+// a lid, a glass) outweighs the pale body.
+const ALSO_PALE = new Set(["cheese-round", "daikon", "fish-white", "jar-cream", "leek", "marshmallow", "milk-almond", "parsnip"]);
+
 // Shorten numbers and prefix internal ids so icons can share one page.
 function tidy(body, key) {
   return body
@@ -198,6 +283,8 @@ function tidy(body, key) {
 
 const wanted = new Set([...Object.values(FOOD_ICONS), ...Object.values(CATEGORY_ICONS), ...OUTCOMES.map((o) => o.icon)]);
 const out = {};
+const outline = { pale: [], dark: [] };
+const foodIcons = new Set([...Object.values(FOOD_ICONS), ...Object.values(CATEGORY_ICONS)]);
 for (const key of [...wanted].sort()) {
   const variant = VARIANTS[key];
   const baseName = variant ? variant[0] : key;
@@ -205,12 +292,29 @@ for (const key of [...wanted].sort()) {
   if (!base) throw new Error(`Unknown icon "${baseName}" (for "${key}")`);
   const body = variant ? recolor(base.body, variant[1], variant[2]) : base.body;
   out[key] = tidy(body, key);
+  if (!foodIcons.has(key)) continue;
+  const t = tone(body);
+  if (t.pale > 0.8 || ALSO_PALE.has(key)) outline.pale.push(key);
+  if (t.dark > 0.38) outline.dark.push(key);
 }
 
 const header = `// Generated by scripts/build-icons.mjs. Do not edit by hand.
 // Icons: Fluent Emoji Flat, Copyright (c) Microsoft Corporation, MIT License
 // (https://github.com/microsoft/fluentui-emoji). Some are recolored.
 `;
-const js = `${header}export const ICON_VIEWBOX = "0 0 32 32";\n\nexport const ICONS = ${JSON.stringify(out, null, 0).replace(/","/g, '",\n"')};\n`;
+const list = (keys) => JSON.stringify(keys).replace(/","/g, '", "');
+const js = `${header}export const ICON_VIEWBOX = "0 0 32 32";
+
+// Icons that need a faint outline to show up on their tile: pale ones in the
+// light theme, dark ones in the dark theme.
+export const ICON_OUTLINE = {
+  pale: new Set(${list(outline.pale)}),
+  dark: new Set(${list(outline.dark)}),
+};
+
+export const ICONS = ${JSON.stringify(out, null, 0).replace(/","/g, '",\n"')};
+`;
 await writeFile(root + "js/data/icons.js", js);
 console.log(`wrote js/data/icons.js: ${Object.keys(out).length} icons, ${(js.length / 1024).toFixed(0)} KB`);
+console.log(`outlined when pale: ${outline.pale.join(" ")}`);
+console.log(`outlined when dark: ${outline.dark.join(" ")}`);
