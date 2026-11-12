@@ -24,7 +24,7 @@ export const FIREBASE_CONFIG = {
 // quotes to switch it on; leave it empty to keep it off.
 // (A site key isn't a secret: it's meant to be in the page.)
 export const LABEL_READING = {
-  recaptchaSiteKey: "",
+  recaptchaSiteKey: "6LdwMBwuAAAAADhMs9_i3zOuN2ejrwWf_A4twuRN",
   // The kind of key: "recaptcha-enterprise" for one made in Google Cloud's
   // Fraud Defense (what Firebase offers now), "recaptcha-v3" for an older
   // reCAPTCHA v3 key registered with its secret key.
