@@ -9,7 +9,7 @@
 // is its own document, so two people logging at once never overwrite each
 // other.
 
-import { cleanCustomFood, cleanLog, cleanProfile, emptyState, isKnownFoodId, mergeBackup } from "./logic.js";
+import { cleanCustomFood, cleanLog, cleanProfile, countEntries, emptyState, isKnownFoodId, localLeftovers, mergeBackup } from "./logic.js";
 
 const STATE_KEY = "first-bites:v1";
 const DEVICE_KEY = "first-bites:device-name";
@@ -62,10 +62,9 @@ class Emitter {
   }
 }
 
-function loadLocalState(knownFoodIds) {
-  const saved = readJSON(STATE_KEY);
+function cleanLocalState(saved, knownFoodIds) {
   const state = emptyState();
-  if (!saved) return state;
+  if (!saved || typeof saved !== "object") return state;
   for (const raw of Object.values(saved.logs || {})) {
     const log = cleanLog(raw, knownFoodIds);
     if (log) state.logs[log.id] = log;
@@ -81,16 +80,79 @@ function loadLocalState(knownFoodIds) {
   return state;
 }
 
-// This device's saved log, read without opening a store.
-export function readLocalState(knownFoodIds) {
-  return loadLocalState(knownFoodIds);
+// Saved entries this copy of the app can't read: a try of a food that a
+// newer version added, say. They go back into storage with every save, so
+// opening an older copy of the app never deletes them.
+function unreadEntries(saved, state) {
+  const raw = (key) => (saved && saved[key] && typeof saved[key] === "object" ? saved[key] : {});
+  const unread = (key, isRead) => Object.fromEntries(Object.entries(raw(key)).filter(([k, v]) => !isRead(k, v)));
+  return {
+    logs: unread("logs", (k, v) => !!v && !!state.logs[v.id]),
+    queue: unread("queue", (k) => !!state.queue[k]),
+    foods: unread("foods", (k, v) => !!v && !!state.foods[v.id]),
+  };
 }
 
-// Drop tries from this device's own log, once they've moved to the shared log.
-export function removeLocalLogs(ids, knownFoodIds) {
-  const state = loadLocalState(knownFoodIds);
-  for (const id of ids) delete state.logs[id];
-  return writeJSON(STATE_KEY, state);
+const NOTHING_UNREAD = { logs: {}, queue: {}, foods: {} };
+
+function loadLocal(knownFoodIds) {
+  const saved = readJSON(STATE_KEY);
+  const state = cleanLocalState(saved, knownFoodIds);
+  return { state, unread: unreadEntries(saved, state) };
+}
+
+function saveLocal(state, unread) {
+  return writeJSON(STATE_KEY, {
+    ...state,
+    logs: { ...unread.logs, ...state.logs },
+    queue: { ...unread.queue, ...state.queue },
+    foods: { ...unread.foods, ...(state.foods || {}) },
+  });
+}
+
+// Can this browser keep anything? (Private modes and full storage can't.)
+function storageWorks() {
+  try {
+    localStorage.setItem(`${STATE_KEY}:probe`, "1");
+    localStorage.removeItem(`${STATE_KEY}:probe`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// This device's saved log, read without opening a store.
+export function readLocalState(knownFoodIds) {
+  return loadLocal(knownFoodIds).state;
+}
+
+// Replace this device's saved log, e.g. to put back one that was discarded.
+export function writeLocalState(state, knownFoodIds) {
+  return saveLocal(state, loadLocal(knownFoodIds).unread);
+}
+
+// Drop entries from this device's own log by id: something deleted from the
+// shared log shouldn't come back from a copy kept here.
+function forgetLocal(knownFoodIds, { logs = [], queue = [], foods = [] }) {
+  const { state, unread } = loadLocal(knownFoodIds);
+  const before = JSON.stringify(state);
+  for (const id of logs) delete state.logs[id];
+  for (const id of queue) delete state.queue[id];
+  for (const id of foods) delete state.foods[id];
+  if (JSON.stringify(state) !== before) saveLocal(state, unread);
+}
+
+// While signed in, this device's own log only holds what the shared log
+// doesn't have yet. Drop the entries the shared log has, and return what is
+// left (see localLeftovers). Only call this with a shared state the server
+// has confirmed: until then this device's copy is the only safe one.
+export function pruneLocalState(shared, knownFoodIds) {
+  const { state, unread } = loadLocal(knownFoodIds);
+  const left = localLeftovers(state, shared);
+  const before = countEntries(state);
+  const after = countEntries(left);
+  if (Object.keys(before).some((key) => after[key] < before[key])) saveLocal(left, unread);
+  return left;
 }
 
 export class LocalStore extends Emitter {
@@ -99,12 +161,14 @@ export class LocalStore extends Emitter {
     this.mode = "local";
     this.canWrite = true;
     this.knownFoodIds = knownFoodIds;
-    this.state = loadLocalState(knownFoodIds);
-    this.persisted = writeJSON(STATE_KEY, this.state);
+    // Nothing is written until something changes: what's saved stays as it
+    // is, including entries this copy of the app can't read.
+    ({ state: this.state, unread: this.unread } = loadLocal(knownFoodIds));
+    this.persisted = storageWorks();
     // Keep several open tabs in step.
     this.onStorage = (e) => {
       if (e.key !== STATE_KEY) return;
-      this.state = loadLocalState(knownFoodIds);
+      ({ state: this.state, unread: this.unread } = loadLocal(knownFoodIds));
       this.emit();
     };
     window.addEventListener("storage", this.onStorage);
@@ -116,7 +180,7 @@ export class LocalStore extends Emitter {
 
   commit(next) {
     this.state = next;
-    this.persisted = writeJSON(STATE_KEY, next);
+    this.persisted = saveLocal(next, this.unread);
     this.emit();
   }
 
@@ -169,12 +233,13 @@ export class LocalStore extends Emitter {
   }
 
   async importBackup(backup) {
-    const { state, added, updated } = mergeBackup(this.state, backup, this.knownFoodIds);
+    const { state, ...counts } = mergeBackup(this.state, backup, this.knownFoodIds);
     this.commit(state);
-    return { added, updated };
+    return counts;
   }
 
   async clearAll() {
+    this.unread = NOTHING_UNREAD;
     this.commit(emptyState());
   }
 }
@@ -182,7 +247,7 @@ export class LocalStore extends Emitter {
 // Messages for errors a viewer can do something about.
 export function describeStoreError(err) {
   const code = err && err.code;
-  if (code === "permission-denied") return "This account isn't allowed to use the shared log. Check the email addresses in your Firestore rules.";
+  if (code === "permission-denied") return "This account isn't allowed to use the shared log. Check that your Firestore rules list this account.";
   if (code === "unauthenticated") return "You've been signed out. Sign in again on the Baby tab to keep syncing.";
   if (code === "invalid_argument") return "You can view this tracker but not change it. Ask the owner to give you edit access.";
   if (code === "quota_exceeded") return "The shared tracker is full. Export a backup and delete old entries to make room.";
@@ -319,7 +384,7 @@ export class SharedStore extends Emitter {
   }
 
   async importBackup(backup) {
-    const { state, added, updated } = mergeBackup(this.state, backup, this.knownFoodIds);
+    const { state, ...counts } = mergeBackup(this.state, backup, this.knownFoodIds);
     for (const food of Object.values(state.foods)) {
       if (this.state.foods[food.id] !== food) await withRetry(() => this.db.collection("foods").doc(food.id).set(food));
     }
@@ -333,7 +398,7 @@ export class SharedStore extends Emitter {
     const profilePatch = {};
     for (const [k, v] of Object.entries(state.profile)) if (this.state.profile[k] !== v) profilePatch[k] = v;
     if (Object.keys(profilePatch).length) await this.setProfile(profilePatch);
-    return { added, updated };
+    return counts;
   }
 
   async clearAll() {
@@ -367,13 +432,26 @@ export class CloudStore extends Emitter {
     this.state = emptyState();
     this.loaded = { logs: false, queue: false, profile: false, foods: false };
     this.error = null;
-    this.pendingWrites = false;
+    // For each part of the log: does this device hold changes the server
+    // hasn't taken yet, and has the server been heard from at all?
+    this.sync = { logs: null, queue: null, profile: null, foods: null };
     this.onError = () => {};
     this.unsubs = [];
   }
 
   get ready() {
     return Object.values(this.loaded).every(Boolean);
+  }
+
+  // Changes made on this device that haven't reached the server.
+  get pendingWrites() {
+    return Object.values(this.sync).some((part) => !!part && part.pending);
+  }
+
+  // Everything in `state` is on the server: nothing from this device is
+  // still waiting, and nothing is showing from the offline cache alone.
+  get confirmed() {
+    return this.ready && !this.error && Object.values(this.sync).every((part) => !!part && !part.pending && !part.fromCache);
   }
 
   get email() {
@@ -388,48 +466,51 @@ export class CloudStore extends Emitter {
       this.error = err;
       this.emit();
     };
-    this.unsubs.push(
-      fb.onSnapshot(fb.collection(db, "logs"), { includeMetadataChanges: true }, (snap) => {
-        this.pendingWrites = snap.metadata.hasPendingWrites;
-        // When a write reaches the server only the metadata changes: pass on
-        // the same state, so the page updates the sync note but not the list.
-        if (this.loaded.logs && !snap.docChanges().length) {
+    // Each listener also hears about sync status (includeMetadataChanges).
+    // When a write reaches the server only the status changes: the same
+    // state is passed on, so the page updates its sync notes but not lists.
+    const listen = (key, ref, read) =>
+      fb.onSnapshot(
+        ref,
+        { includeMetadataChanges: true },
+        (snap) => {
+          this.sync[key] = { pending: snap.metadata.hasPendingWrites, fromCache: snap.metadata.fromCache };
+          const statusOnly = this.loaded[key] && typeof snap.docChanges === "function" && !snap.docChanges().length;
+          if (!statusOnly) {
+            const value = read(snap);
+            // The profile is one document, so compare what it holds.
+            if (!this.loaded[key] || key !== "profile" || JSON.stringify(value) !== JSON.stringify(this.state.profile)) this.state = { ...this.state, [key]: value };
+          }
+          this.loaded[key] = true;
           this.emit();
-          return;
-        }
+        },
+        fail,
+      );
+    this.unsubs.push(
+      listen("logs", fb.collection(db, "logs"), (snap) => {
         const logs = {};
         for (const d of snap.docs) {
           const log = cleanLog({ ...d.data(), id: d.id }, this.knownFoodIds);
           if (log) logs[log.id] = log;
         }
-        this.loaded.logs = true;
-        this.state = { ...this.state, logs };
-        this.emit();
-      }, fail),
-      fb.onSnapshot(fb.collection(db, "queue"), (snap) => {
+        return logs;
+      }),
+      listen("queue", fb.collection(db, "queue"), (snap) => {
         const queue = {};
         for (const d of snap.docs) {
           if (isKnownFoodId(d.id, this.knownFoodIds)) queue[d.id] = { foodId: d.id, addedAt: Number(d.data().addedAt) || 0 };
         }
-        this.loaded.queue = true;
-        this.state = { ...this.state, queue };
-        this.emit();
-      }, fail),
-      fb.onSnapshot(fb.doc(db, "meta", "profile"), (snap) => {
-        this.loaded.profile = true;
-        this.state = { ...this.state, profile: snap.exists() ? cleanProfile(snap.data()) : {} };
-        this.emit();
-      }, fail),
-      fb.onSnapshot(fb.collection(db, "foods"), (snap) => {
+        return queue;
+      }),
+      listen("profile", fb.doc(db, "meta", "profile"), (snap) => (snap.exists() ? cleanProfile(snap.data()) : {})),
+      listen("foods", fb.collection(db, "foods"), (snap) => {
         const foods = {};
         for (const d of snap.docs) {
           const food = cleanCustomFood({ ...d.data(), id: d.id }, this.knownFoodIds);
           if (food) foods[food.id] = food;
         }
-        this.loaded.foods = true;
-        this.state = { ...this.state, foods };
-        this.emit();
-      }, fail),
+        return foods;
+      }),
     );
   }
 
@@ -442,6 +523,7 @@ export class CloudStore extends Emitter {
     this.dispose();
     this.error = null;
     this.loaded = { logs: false, queue: false, profile: false, foods: false };
+    this.sync = { logs: null, queue: null, profile: null, foods: null };
     this.start();
   }
 
@@ -470,12 +552,14 @@ export class CloudStore extends Emitter {
 
   async deleteLog(id) {
     const { fb, db } = this.cloud;
+    forgetLocal(this.knownFoodIds, { logs: [id] });
     this.send(fb.deleteDoc(fb.doc(db, "logs", id)));
   }
 
   async setQueued(foodId, on) {
     const { fb, db } = this.cloud;
     const ref = fb.doc(db, "queue", foodId);
+    if (!on) forgetLocal(this.knownFoodIds, { queue: [foodId] });
     this.send(on ? fb.setDoc(ref, { foodId, addedAt: Date.now() }) : fb.deleteDoc(ref));
   }
 
@@ -494,6 +578,7 @@ export class CloudStore extends Emitter {
   async deleteFood(id) {
     const { fb, db } = this.cloud;
     const { logIds, queued } = linkedTo(this.state, id);
+    forgetLocal(this.knownFoodIds, { logs: logIds, queue: [id], foods: [id] });
     this.writeAll([
       ...logIds.map((logId) => (b) => b.delete(fb.doc(db, "logs", logId))),
       ...(queued ? [(b) => b.delete(fb.doc(db, "queue", id))] : []),
@@ -513,7 +598,7 @@ export class CloudStore extends Emitter {
 
   async importBackup(backup) {
     const { fb, db } = this.cloud;
-    const { state, added, updated } = mergeBackup(this.state, backup, this.knownFoodIds);
+    const { state, ...counts } = mergeBackup(this.state, backup, this.knownFoodIds);
     const ops = [];
     for (const food of Object.values(state.foods)) {
       if (this.state.foods[food.id] !== food) ops.push((b) => b.set(fb.doc(db, "foods", food.id), JSON.parse(JSON.stringify(food))));
@@ -528,11 +613,12 @@ export class CloudStore extends Emitter {
     for (const [k, v] of Object.entries(state.profile)) if (this.state.profile[k] !== v) profilePatch[k] = v;
     if (Object.keys(profilePatch).length) ops.push((b) => b.set(fb.doc(db, "meta", "profile"), profilePatch, { merge: true }));
     this.writeAll(ops);
-    return { added, updated };
+    return counts;
   }
 
   async clearAll() {
     const { fb, db } = this.cloud;
+    forgetLocal(this.knownFoodIds, { logs: Object.keys(this.state.logs), queue: Object.keys(this.state.queue), foods: Object.keys(this.state.foods) });
     const ops = [
       ...Object.keys(this.state.logs).map((id) => (b) => b.delete(fb.doc(db, "logs", id))),
       ...Object.keys(this.state.queue).map((id) => (b) => b.delete(fb.doc(db, "queue", id))),

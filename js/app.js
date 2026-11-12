@@ -4,7 +4,7 @@ import { ALLERGENS, ALLERGEN_DUE_DAYS, ALLERGEN_FIRST_FOOD, ALLERGEN_STARTERS, C
 import { GUIDE } from "./data/guide.js";
 import { ICONS, ICON_VIEWBOX } from "./data/icons.js";
 import * as L from "./logic.js";
-import { CloudStore, LocalStore, describeStoreError, getDeviceName, openStore, readLocalState, removeLocalLogs, setDeviceName } from "./store.js";
+import { CloudStore, LocalStore, describeStoreError, getDeviceName, openStore, pruneLocalState, readLocalState, setDeviceName, writeLocalState } from "./store.js";
 import { describeAuthError, describeLabelError, loadCloud, readLabelImage, readSyncConfig } from "./cloud.js";
 import { LABEL_MODEL, LABEL_PROMPT, labelSchema, parseLabel } from "./label.js";
 
@@ -123,11 +123,49 @@ function phoneOnly() {
   return !!(app.syncConfig || app.syncConfigError) && !!app.store && app.store.mode === "local";
 }
 
-// Tries saved on this phone while signed out, not yet in the shared log.
-function unsyncedLocalIds() {
-  if (!app.store || app.store.mode !== "cloud" || !app.store.ready) return [];
-  return Object.keys(readLocalState(KNOWN_IDS).logs).filter((id) => !app.state.logs[id]);
+// The log is all here: saved on this phone, or loaded from the shared log
+// without a problem. Until then, nothing that reads or rewrites the whole
+// log (backups, moving tries over, deleting everything) should run.
+function dataReady() {
+  const store = app.store;
+  return !!store && (store.mode === "local" || (store.ready && !store.error));
 }
+
+const NOT_READY = "Your shared log isn't loaded. Try again once it is.";
+
+// What this phone saved on its own (while signed out, or before sync
+// connected) that the shared log doesn't have: tries, foods you added,
+// to-try entries and baby details. Null when there's nothing, or when the
+// shared log isn't loaded to compare with.
+//
+// This phone's copy of an entry is only dropped here, once the server has
+// confirmed the shared log holds it. Worked out again when the log or its
+// sync status changes.
+let leftoverCache = { state: null, confirmed: false, value: null };
+
+function localLeftovers() {
+  const store = app.store;
+  if (!store || store.mode !== "cloud" || !dataReady()) return null;
+  if (leftoverCache.state !== store.state || leftoverCache.confirmed !== store.confirmed) {
+    const left = store.confirmed ? pruneLocalState(store.state, KNOWN_IDS) : L.localLeftovers(readLocalState(KNOWN_IDS), store.state);
+    const any = Object.values(L.countEntries(left)).some(Boolean);
+    leftoverCache = { state: store.state, confirmed: store.confirmed, value: any ? left : null };
+  }
+  return leftoverCache.value;
+}
+
+// "3 tries, 1 food you added and baby details"
+function describeEntries({ tries, foods, queued, details }) {
+  const parts = [tries && plural(tries, "try", "tries"), foods && plural(foods, "food you added", "foods you added"), queued && plural(queued, "to-try food"), details && "baby details"].filter(Boolean);
+  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0] || "";
+}
+
+function leftoverText() {
+  const left = localLeftovers();
+  return left ? describeEntries(L.countEntries(left)) : "";
+}
+
+const LEFTOVER_BUTTONS = `<button type="button" class="btn btn-small btn-primary" data-action="copy-local">Move to shared log</button><button type="button" class="btn btn-small btn-quiet" data-action="discard-local">Discard</button>`;
 
 function ageTag(food) {
   if (food.age == null) return "Avoid";
@@ -179,6 +217,13 @@ function setDialogHTML(dialog, html) {
   const keep = dialog.contains(toastEl) && !toastEl.hidden;
   dialog.innerHTML = html;
   if (keep) showToastIn(dialog);
+}
+
+// Open a dialog, bringing a message that's showing along with it: outside
+// a modal dialog its Undo button couldn't be tapped.
+function openModal(dialog) {
+  if (!dialog.open) dialog.showModal();
+  if (!toastEl.hidden && toastEl.parentElement !== dialog) showToastIn(dialog);
 }
 
 function toastHost() {
@@ -326,9 +371,12 @@ function statusNoticesHTML() {
   } else if (phoneOnly() && app.cloud.status === "signed-out") {
     notices.push(`<div class="notice"><p><strong>You're signed out.</strong> Sign in to see your shared log. Until then, tries are saved on this phone only.</p><a class="btn btn-small btn-primary" href="#setup">Sign in</a></div>`);
   }
-  const unsynced = unsyncedLocalIds().length;
-  if (unsynced) {
-    notices.push(`<div class="notice"><p>This phone has ${plural(unsynced, "try", "tries")} logged while you were signed out.</p><button type="button" class="btn btn-small btn-primary" data-action="copy-local">Move to shared log</button></div>`);
+  if (app.store && app.store.mode === "local" && app.store.persisted === false) {
+    notices.push(`<div class="notice notice-bad" role="alert"><p><strong>This browser isn't saving your log.</strong> Its storage is blocked or full, so tries will be lost when you close the app. Export a backup to keep them.</p><a class="btn btn-small" href="#setup">Backup</a></div>`);
+  }
+  const left = leftoverText();
+  if (left) {
+    notices.push(`<div class="notice"><p>This phone has ${esc(left)} saved while you were signed out.</p><div class="button-row">${LEFTOVER_BUTTONS}</div></div>`);
   }
   const settling = loading() || app.cloud.status === "loading";
   if (!notices.length && !settling && !phoneOnly() && !app.state.profile.birthDate) {
@@ -585,7 +633,7 @@ function updateFilterDone() {
 
 function openFilters() {
   renderFilterSheet();
-  filterSheet.showModal();
+  openModal(filterSheet);
   $("#filter-title", filterSheet).focus();
 }
 
@@ -850,7 +898,7 @@ function showSheet(id) {
   if (app.openFoodId !== id) app.stage = null;
   app.openFoodId = id;
   renderSheet();
-  if (!sheet.open) sheet.showModal();
+  openModal(sheet);
   sheet.scrollTop = 0;
   $("#sheet-title", sheet).focus();
 }
@@ -865,7 +913,13 @@ function openFood(id) {
   location.hash = `food-${id}`;
 }
 
+// Closing changes the address, and the page itself closes when that lands
+// (see route). A second call before then does nothing: e.g. a food deleted
+// here, whose page is also closed as the log updates.
 function closeFood() {
+  if (app.closingFood) return;
+  app.closingFood = true;
+  setTimeout(() => (app.closingFood = false), 500);
   if (app.pushedFood && location.hash.startsWith("#food-")) {
     app.pushedFood = false;
     history.back();
@@ -961,7 +1015,7 @@ function openFoodForm({ id = null, name = "" } = {}) {
     </form>`);
   updateFoodFormParts();
   foodForm.dataset.initial = foodFormSnapshot();
-  if (!foodForm.open) foodForm.showModal();
+  openModal(foodForm);
   $(existing || name ? "#ff-title" : "#ff-name", foodForm).focus();
 }
 
@@ -984,12 +1038,18 @@ function labelReaderHTML() {
 // long side), as base64.
 async function photoToJPEG(file, longest = 1600) {
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, longest / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
-  canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  try {
+    const scale = Math.min(1, longest / Math.max(bitmap.width, bitmap.height));
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  } finally {
+    // A phone photo is large once decoded: let go of it right away.
+    bitmap.close();
+  }
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+  if (!blob) throw new Error("The photo couldn't be prepared");
   const bytes = new Uint8Array(await blob.arrayBuffer());
   let binary = "";
   for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -1001,16 +1061,20 @@ async function readLabelPhoto(file) {
   const button = $("#ff-photo-btn", foodForm);
   status.innerHTML = '<p class="reading"><span class="spinner" aria-hidden="true"></span>Reading the label…</p>';
   button.classList.add("is-busy");
+  // The form this read was started from: if it's closed (or another one is
+  // opened) before the answer comes back, the answer is dropped.
+  const session = ff;
   try {
     const base64 = await photoToJPEG(file);
     const answer = await readLabelImage(app.cloudApi, app.labelSettings, { prompt: LABEL_PROMPT, schema: labelSchema, model: LABEL_MODEL }, base64);
     const read = parseLabel(answer, FOODS);
     if (!read.readable) throw Object.assign(new Error("No label in the photo"), { code: "unreadable" });
-    if (!foodForm.open || !ff) return;
+    if (!foodForm.open || ff !== session) return;
     applyLabel(read);
     const notes = [];
     if (read.spotted.length) notes.push(`Also ticked ${read.spotted.map((a) => ALLERGEN_LABEL[a].toLowerCase()).join(", ")}, from words in the ingredients.`);
     if (read.unmatched.length) notes.push(`Not in the food list, so not counted: ${read.unmatched.join(", ")}.`);
+    if (read.noted.length) notes.push(`Added to the notes, not counted as a food tried: ${read.noted.join(" and ")}.`);
     status.innerHTML = `<div class="form-note read-ok"><p><strong>Filled in from the label.</strong> Check everything against the pack before saving.</p>${notes.map((n) => `<p>${esc(n)}</p>`).join("")}</div>`;
   } catch (err) {
     console.error(err);
@@ -1030,10 +1094,11 @@ function applyLabel(read) {
   for (const id of read.ingredientIds) if (!ff.ingredients.includes(id)) ff.ingredients.push(id);
   for (const a of read.contains) ff.allergens.add(a);
   for (const a of read.mayContain) ff.mayContain.add(a);
-  if (read.otherAllergens.length) {
-    const extra = `The label also lists: ${read.otherAllergens.join(", ")}.`;
+  const addNote = (extra) => {
     if (!form.notes.value.includes(extra)) form.notes.value = [form.notes.value.trim(), extra].filter(Boolean).join("\n");
-  }
+  };
+  if (read.otherAllergens.length) addNote(`The label also lists: ${read.otherAllergens.join(", ")}.`);
+  if (read.noted.length) addNote(`The label lists ${read.noted.join(" and ")}.${read.noted.includes("sugar") ? " Experts recommend no added sugar before age 2." : ""}`);
   if (read.mayContain.length) $(".ff-may", form).open = true;
   $("#ff-title", foodForm).textContent = form.foodname.value.trim() || "New food";
   updateFoodFormParts();
@@ -1119,6 +1184,8 @@ async function submitFoodForm(form) {
   if (!name) return showFoodFormError("Give the food a name.", form.foodname);
   const clash = FOODS.find((f) => L.normalizeText(f.name) === L.normalizeText(name));
   if (clash) return showFoodFormError(`${clash.name} is already in the food list. Search for it on the Foods tab.`, form.foodname);
+  const twin = Object.values(app.state.foods || {}).find((f) => f.id !== ff.id && L.normalizeText(f.name) === L.normalizeText(name));
+  if (twin) return showFoodFormError(`You've already added a food called ${twin.name}. Edit that one, or give this a different name.`, form.foodname);
   const existing = ff.id ? app.state.foods[ff.id] : null;
   const now = Date.now();
   // Only allergens ticked by hand are kept: the ingredients' own are worked
@@ -1243,7 +1310,7 @@ function openQuickLog(foodId) {
   logDialog.dataset.food = foodId;
   logDialog.dataset.log = "";
   logDialog.dataset.initial = logFormSnapshot();
-  if (!logDialog.open) logDialog.showModal();
+  openModal(logDialog);
   $("#log-title", logDialog).focus();
 }
 
@@ -1335,7 +1402,7 @@ function openLogDialog(foodId, logId, { reaction = false } = {}) {
   logDialog.dataset.food = foodId;
   logDialog.dataset.log = existing ? existing.id : "";
   logDialog.dataset.initial = logFormSnapshot();
-  if (!logDialog.open) logDialog.showModal();
+  openModal(logDialog);
   $("#log-title", logDialog).focus();
 }
 
@@ -1502,13 +1569,16 @@ function renderProgress() {
     main.innerHTML = `${head('<span class="visually-hidden" role="status">Loading your tracker…</span>')}${progressSkeletonHTML()}`;
     return;
   }
-  const tried = triedFoods().size;
+  const foodsTried = triedFoods();
+  const tried = foodsTried.size;
   const target = goal();
-  const all = [...app.summaries.values()];
-  const totalTries = all.reduce((n, s) => n + s.count, 0);
-  const count = (status) => all.filter((s) => s.status === status).length;
-  const reactions = count("reaction");
-  const beforeOne = L.triedBeforeFirstBirthday(triedFoods(), app.state.profile.birthDate);
+  // Each logged try once: a meal isn't also counted for what's in it.
+  const totalTries = Object.values(app.state.logs).filter((log) => foodById(log.foodId)).length;
+  // Liked and still learning add up with the ring (foods, not meals). A
+  // reaction counts wherever it was logged, on a food or on a meal.
+  const count = (status) => [...foodsTried.values()].filter((s) => s.status === status).length;
+  const reactions = [...app.summaries].filter(([id, s]) => s.status === "reaction" && foodById(id)).length;
+  const beforeOne = L.triedBeforeFirstBirthday(foodsTried, app.state.profile.birthDate);
   const allergens = L.allergenProgress(foodList, app.summaries);
   const introduced = allergens.filter((a) => a.state !== "new").length;
   const notYet = allergens.filter((a) => a.state === "new");
@@ -1532,6 +1602,19 @@ function renderProgress() {
       </button></li>`,
     )
     .join("");
+
+  // Earlier reactions stay on show after an allergen is back "in the diet",
+  // and a reaction to a meal is listed for each allergen in the meal.
+  const mealNotes = new Map();
+  for (const a of allergens) {
+    if (!a.mealReactionDate) continue;
+    if (!mealNotes.has(a.mealReactionDate)) mealNotes.set(a.mealReactionDate, []);
+    mealNotes.get(a.mealReactionDate).push(a.label.toLowerCase());
+  }
+  const reactionNotes = [
+    ...allergens.filter((a) => a.lastReactionDate).map((a) => `<li><strong>${esc(a.label)}:</strong> reaction noted on ${esc(fmtDate(a.lastReactionDate))}${a.state === "reaction" ? "" : ", and tried again since without one"}.</li>`),
+    ...[...mealNotes].map(([date, labels]) => `<li><strong>${esc(fmtDate(date))}:</strong> reaction noted after a meal with ${esc(labels.join(", "))} in it. It could have been anything in the meal.</li>`),
+  ];
 
   // Recent tries, grouped under Today, Yesterday and earlier days.
   const days = new Map();
@@ -1580,6 +1663,7 @@ function renderProgress() {
         <div class="panel-head"><h2>Common allergens</h2><span class="muted" style="font-size:var(--step--1)">${introduced} of ${allergens.length} introduced</span></div>
         <ul class="allergen-grid">${allergenCells}</ul>
         <p class="muted" style="font-size:var(--step--1)">Keep each one in the diet weekly. “Offer again” means it hasn't been logged in over ${ALLERGEN_DUE_DAYS} days. Tap one to see its foods.</p>
+        ${reactionNotes.length ? `<details class="al-ideas" open><summary>Reactions noted</summary><ul>${reactionNotes.join("")}</ul></details>` : ""}
         ${notYet.length ? `<details class="al-ideas"><summary>First-taste ideas for the ${plural(notYet.length, "one", "ones")} not tried yet</summary><ul>${notYet.map((a) => `<li><strong>${esc(a.label)}:</strong> ${esc(ALLERGEN_STARTERS[a.id])}</li>`).join("")}</ul></details>` : ""}
       </section>
       <section class="panel">
@@ -1679,7 +1763,7 @@ function syncHTML() {
     </div></div>`;
   }
   if (store.mode === "cloud") {
-    const unsynced = unsyncedLocalIds().length;
+    const left = leftoverText();
     const error = loadError();
     if (error) {
       return `<div class="sync-state"><span class="sync-dot"></span><div>
@@ -1693,11 +1777,13 @@ function syncHTML() {
     return `<div class="sync-state"><span class="sync-dot is-shared"></span><div>
       <p><strong>Synced between your phones.</strong> Signed in as ${esc(store.email)}. Tries either of you log show up on both phones within seconds.</p>
       <p class="muted">${store.pendingWrites ? "Some changes are waiting for a connection and will sync automatically." : "It works offline too, and catches up when you're back online."}</p>
-      ${unsynced ? `<p>This phone also has ${plural(unsynced, "try", "tries")} logged while you were signed out.</p>` : ""}
-      <div class="button-row">
-        ${unsynced ? `<button type="button" class="btn btn-small btn-primary" data-action="copy-local">Move them to the shared log</button>` : ""}
-        <button type="button" class="btn btn-small" data-action="sign-out">Sign out</button>
-      </div>
+      ${left ? `<p>This phone also has ${esc(left)} saved while you were signed out.</p><div class="button-row">${LEFTOVER_BUTTONS}</div>` : ""}
+      ${
+        app.confirmSignOut && store.pendingWrites
+          ? `<div class="danger-box"><p><strong>Some changes haven't reached the shared log yet.</strong> If you sign out now they stay on this phone, out of sight, and only sync once you sign in here again with this account. Better to wait until you're back online.</p>
+            <div class="button-row"><button type="button" class="btn btn-small btn-danger" data-action="sign-out">Sign out anyway</button><button type="button" class="btn btn-small btn-quiet" data-action="stay-signed-in">Stay signed in</button></div></div>`
+          : `<div class="button-row"><button type="button" class="btn btn-small" data-action="sign-out">Sign out</button></div>`
+      }
     </div></div>`;
   }
   if (app.syncConfigError && !window.claude) {
@@ -1860,6 +1946,8 @@ async function saveProfileField(input) {
 }
 
 async function exportBackup() {
+  if (!dataReady()) return showBackupError(NOT_READY);
+  showBackupError("");
   const backup = L.makeBackup(app.state);
   const text = JSON.stringify(backup, null, 2);
   const filename = `first-bites-backup-${L.todayISO()}.json`;
@@ -1930,9 +2018,15 @@ async function importText(text) {
     showBackupError("That doesn't look like a First Bites backup. Choose the .json file you exported, or paste its full text.");
     return false;
   }
+  if (!dataReady()) {
+    showBackupError(NOT_READY);
+    return false;
+  }
   try {
-    const { added, updated } = await app.store.importBackup(backup);
-    toast(added || updated ? `Imported ${plural(added, "new try", "new tries")}${updated ? `, updated ${updated}` : ""}` : "Already up to date: nothing new in that backup");
+    const { added, updated, foods, queued, details } = await app.store.importBackup(backup);
+    const other = describeEntries({ tries: 0, foods, queued, details });
+    const tries = added || updated ? `${plural(added, "new try", "new tries")}${updated ? `, updated ${updated}` : ""}` : "";
+    toast(tries || other ? `Imported ${[tries, other].filter(Boolean).join(", plus ")}` : "Already up to date: nothing new in that backup");
     return true;
   } catch (err) {
     showBackupError(err && err.code ? describeStoreError(err) : err.message);
@@ -1949,6 +2043,7 @@ function importFile(file) {
 function toggleClearBox(open) {
   const box = $("#clear-box");
   if (!box) return;
+  if (open && !dataReady()) return toast(NOT_READY);
   box.hidden = !open;
   $('[data-action="clear-all"]').setAttribute("aria-expanded", String(open));
   $("#clear-confirm").value = "";
@@ -1965,6 +2060,7 @@ function toggleClearBox(open) {
 
 async function clearAll() {
   if ($("#clear-confirm").value.trim().toUpperCase() !== "DELETE") return;
+  if (!dataReady()) return toast(NOT_READY);
   try {
     await app.store.clearAll();
     toggleClearBox(false);
@@ -1984,8 +2080,14 @@ function renderView() {
 }
 
 function route() {
-  const hash = decodeURIComponent(location.hash.slice(1));
+  let hash = location.hash.slice(1);
+  try {
+    hash = decodeURIComponent(hash);
+  } catch {
+    // Not a valid address (a stray "%"): treated as no page, so Foods opens.
+  }
   app.pendingFood = null;
+  app.closingFood = false;
   if (hash.startsWith("food-")) {
     const id = hash.slice(5);
     if (foodById(id)) {
@@ -2010,11 +2112,20 @@ function route() {
   }
 }
 
+// Redrawn only when they change, so a button in one keeps the focus.
+function refreshStatusNotices() {
+  const html = statusNoticesHTML();
+  const notices = $("#status-notices");
+  if (notices && notices.shownHTML !== html) {
+    notices.innerHTML = html;
+    notices.shownHTML = html;
+  }
+}
+
 function refresh() {
   renderChrome();
   if (app.view === "foods") {
-    const notices = $("#status-notices");
-    if (notices) notices.innerHTML = statusNoticesHTML();
+    refreshStatusNotices();
     // The how-to line is only needed until the first try is logged.
     const intro = $("#foods-intro");
     if (intro) intro.hidden = app.summaries.size > 0;
@@ -2246,7 +2357,24 @@ document.addEventListener("click", (e) => {
       clearAll();
       break;
     case "sign-out":
-      app.cloudApi?.signOut().then(() => toast("Signed out. New tries will be saved on this phone only."));
+      // Ask first when changes made here haven't reached the shared log.
+      if (app.store.pendingWrites && !app.confirmSignOut) {
+        app.confirmSignOut = true;
+        refreshSetup();
+        break;
+      }
+      app.confirmSignOut = false;
+      app.cloudApi?.signOut().then(
+        () => toast("Signed out. New tries will be saved on this phone only."),
+        () => toast("Couldn't sign out. Try again."),
+      );
+      break;
+    case "stay-signed-in":
+      app.confirmSignOut = false;
+      refreshSetup();
+      break;
+    case "discard-local":
+      discardLocal();
       break;
     case "reset-password":
       resetPassword();
@@ -2550,10 +2678,15 @@ function registerServiceWorker() {
   // isn't left running the old files.
   const hadController = !!navigator.serviceWorker.controller;
   let reloading = false;
+  // Not in the middle of a form, though: wait until it's saved or closed.
+  const reloadWhenIdle = () => {
+    if (document.querySelector("dialog[open] form")) setTimeout(reloadWhenIdle, 2000);
+    else location.reload();
+  };
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (!hadController || reloading) return;
     reloading = true;
-    location.reload();
+    reloadWhenIdle();
   });
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
@@ -2563,13 +2696,15 @@ function attachStore(store) {
   if (app.unsubscribe) app.unsubscribe();
   if (app.store && app.store !== store && app.store.dispose) app.store.dispose();
   app.store = store;
+  app.confirmSignOut = false;
   store.onError = (err) => toast(describeStoreError(err));
   if (store.start && store.mode === "cloud") store.start();
   app.unsubscribe = store.subscribe((state) => {
     // Same data with a new sync status (e.g. a write reached the server):
-    // only the Baby tab's sync note needs redrawing.
+    // only the sync notes need redrawing.
     if (state === app.state && !store.error) {
       if (app.view === "setup") refreshSetup();
+      else refreshStatusNotices();
       return;
     }
     app.state = state;
@@ -2639,19 +2774,35 @@ async function resetPassword() {
   }
 }
 
-// Move tries logged while signed out into the shared log. They leave this
-// phone's own log, so they're only offered once.
+// Move what this phone saved while signed out into the shared log. This
+// phone keeps its copy until the server confirms the shared log has it (see
+// localLeftovers), so a move that is turned away loses nothing.
 async function copyLocalToCloud() {
-  if (!unsyncedLocalIds().length) return;
-  const local = readLocalState(KNOWN_IDS);
+  const left = localLeftovers();
+  if (!left) return;
+  const what = describeEntries(L.countEntries(left));
   try {
-    const { added } = await app.store.importBackup(L.makeBackup(local));
-    removeLocalLogs(Object.keys(local.logs), KNOWN_IDS);
-    toast(`Moved ${plural(added, "try", "tries")} to the shared log`);
-    refresh();
+    await app.store.importBackup(L.makeBackup(left));
+    toast(`Moving ${what} to the shared log`);
   } catch (err) {
     toast(describeStoreError(err));
   }
+}
+
+// Or drop it: for leftovers that were dealt with some other way.
+function discardLocal() {
+  const left = localLeftovers();
+  if (!left) return;
+  const before = readLocalState(KNOWN_IDS);
+  const put = (state) => {
+    writeLocalState(state, KNOWN_IDS);
+    leftoverCache = { state: null, confirmed: false, value: null };
+    refresh();
+  };
+  // Only the leftovers go: a copy still waiting for the server stays.
+  const without = (mine, gone) => Object.fromEntries(Object.entries(mine).filter(([id]) => !(id in gone)));
+  put({ logs: without(before.logs, left.logs), queue: without(before.queue, left.queue), profile: without(before.profile, left.profile), foods: without(before.foods, left.foods) });
+  toast(`Discarded ${describeEntries(L.countEntries(left))} from this phone`, { undo: async () => put(before) });
 }
 
 async function boot() {

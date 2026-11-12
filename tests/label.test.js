@@ -49,3 +49,27 @@ test("the label schema builds with the SDK's helpers", () => {
   assert.ok(schema.properties.contains.items.enum.includes("shellfish"));
   assert.ok(schema.properties.category.enum.includes("mixed"));
 });
+
+test("plurals match either way round, and look-alikes aren't matched", () => {
+  const { matched, unmatched } = matchIngredients(["pea protein", "olive", "egg", "black bean", "cocoa butter", "peanut butter", "coconut milk"], FOODS);
+  assert.deepEqual(matched, ["peas", "olives", "eggs", "black-beans", "peanut-butter", "coconut-milk"]);
+  assert.deepEqual(unmatched, ["cocoa butter"], "cocoa butter isn't butter");
+});
+
+test("salt and sugar on a label are noted, not counted as foods tried", () => {
+  const { matched, unmatched, noted } = matchIngredients(["potato", "sea salt", "cane sugar", "Sugar", "spring water"], FOODS);
+  assert.deepEqual(matched, ["potato"]);
+  assert.deepEqual(noted, ["salt", "sugar"]);
+  assert.deepEqual(unmatched, []);
+  assert.deepEqual(parseLabel({ ingredients: ["apple", "sugar"] }, FOODS).noted, ["sugar"]);
+});
+
+test("dairy words inside other foods' names don't tick milk", () => {
+  for (const text of ["peanut butter", "coconut milk", "cocoa butter", "butter beans", "cream of tartar", "almond butter, oat milk"]) {
+    assert.ok(!spotAllergens(text).includes("milk"), text);
+  }
+  assert.deepEqual(spotAllergens("Peanut butter (peanuts), milk solids"), ["milk", "peanut"], "real milk next to them still does");
+  assert.deepEqual(spotAllergens("coconut milk powder (milk protein)"), ["milk"]);
+  for (const text of ["buttermilk", "milkfat", "cheddar", "Butter (cream, salt)"]) assert.deepEqual(spotAllergens(text), ["milk"], text);
+  assert.deepEqual(spotAllergens("Contains: Brazil nuts"), ["treenut"], "plurals are spotted");
+});

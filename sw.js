@@ -1,8 +1,9 @@
 // Offline support for the installed app.
 //
 // The app's own files are fetched from the network first, so a newly
-// published version shows up on the next load; the cached copy is only used
-// when offline. Google Fonts come from the cache once downloaded. Everything
+// published version shows up on the next load; the cached copy is used when
+// offline, or when the connection is too weak to open the page in a few
+// seconds. Google Fonts come from the cache once downloaded. Everything
 // else (Firebase sync traffic, links out) is left alone: caching those would
 // serve stale data.
 const CACHE = "first-bites-v8";
@@ -66,22 +67,58 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
   const url = new URL(request.url);
-  if (url.origin === self.location.origin) event.respondWith(networkFirst(request));
+  if (url.origin === self.location.origin) event.respondWith(networkFirst(event));
   else if (FONT_HOSTS.has(url.hostname)) event.respondWith(cacheFirst(request));
 });
 
-async function networkFirst(request) {
+// How long opening the page waits for the network before using the cache.
+const PAGE_TIMEOUT_MS = 3000;
+// After that, the page's other files come from the cache too for this
+// long, so one load never mixes cached files with newer ones.
+const CACHED_LOAD_MS = 20000;
+let cachedLoadUntil = 0;
+
+async function networkFirst(event) {
+  const { request } = event;
   const cache = await caches.open(CACHE);
-  try {
-    // "no-cache" asks the server whether the file changed (cheap when it hasn't).
-    const response = await fetch(request, { cache: "no-cache" });
-    if (response.ok) cache.put(request, response.clone());
-    return response;
-  } catch (err) {
-    const cached = (await cache.match(request)) || (request.mode === "navigate" && (await cache.match("./")));
+  const isPage = request.mode === "navigate";
+  const fromCache = async () => (await cache.match(request)) || (isPage && (await cache.match("./"))) || null;
+  if (isPage) cachedLoadUntil = 0;
+  else if (Date.now() < cachedLoadUntil) {
+    const cached = await fromCache();
     if (cached) return cached;
-    throw err;
   }
+  // "no-cache" asks the server whether the file changed (cheap when it hasn't).
+  let gaveUp = false;
+  const network = fetch(request, { cache: "no-cache" }).then((response) => {
+    if (response.ok && !gaveUp) {
+      const saved = cache.put(request, response.clone()).catch(() => {});
+      try {
+        event.waitUntil(saved);
+      } catch {
+        // The request was already answered; the copy is still being saved.
+      }
+    }
+    return response;
+  });
+  try {
+    if (!isPage) return await network;
+    const timeout = new Promise((resolve) => setTimeout(resolve, PAGE_TIMEOUT_MS, null));
+    const response = await Promise.race([network, timeout]);
+    if (response) return response;
+  } catch (err) {
+    const cached = await fromCache();
+    if (!cached) throw err;
+    if (isPage) cachedLoadUntil = Date.now() + CACHED_LOAD_MS;
+    return cached;
+  }
+  // The page is taking too long: open the cached copy if there is one.
+  const cached = await fromCache();
+  if (!cached) return network;
+  gaveUp = true;
+  network.catch(() => {});
+  cachedLoadUntil = Date.now() + CACHED_LOAD_MS;
+  return cached;
 }
 
 async function cacheFirst(request) {

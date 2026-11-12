@@ -227,3 +227,80 @@ test("logs, to-try entries and backups accept family foods", () => {
   const newer = L.mergeBackup(state, { app: "first-bites", foods: { [meal.id]: { ...meal, name: "Renamed", updatedAt: 5 } } }, KNOWN);
   assert.equal(newer.state.foods[meal.id].name, "Renamed", "the newer edit wins");
 });
+
+// ---------- allergens across foods and meals ----------
+
+const plain = (id, allergens) => ({ id, allergens });
+const state = (logs, foods = {}) => ({ logs: Object.fromEntries(logs.map((l) => [l.id, l])), foods });
+const stateOf = (foods, summaries, allergen, today = "2026-11-12") => L.allergenProgress(foods, summaries, today).find((a) => a.id === allergen);
+
+test("a clean try of another food with the allergen clears a reaction, and keeps its date", () => {
+  const foods = [plain("cheddar", ["milk"]), plain("yogurt", ["milk"])];
+  const reacted = log("1", "cheddar", "2026-11-01", "liked", { reactions: ["rash"] });
+  let milk = stateOf(foods, L.summarizeAll(state([reacted])), "milk");
+  assert.equal(milk.state, "reaction");
+
+  milk = stateOf(foods, L.summarizeAll(state([reacted, log("2", "yogurt", "2026-11-10", "liked")])), "milk");
+  assert.equal(milk.state, "ok", "yogurt went fine since");
+  assert.equal(milk.lastReactionDate, "2026-11-01", "the earlier reaction is still reported");
+
+  milk = stateOf(foods, L.summarizeAll(state([reacted, log("2", "yogurt", "2026-11-01", "liked")])), "milk");
+  assert.equal(milk.state, "reaction", "a clean try the same day doesn't clear it");
+
+  milk = stateOf(foods, L.summarizeAll(state([reacted, log("2", "yogurt", "2026-11-02", "liked")])), "milk", "2026-11-20");
+  assert.equal(milk.state, "due", "and it's nudged again once a week has passed");
+});
+
+test("a reaction to a meal is a caution for its allergens, not a verdict", () => {
+  const byId = new Map(FOODS.map((f) => [f.id, f]));
+  const mix = L.cleanCustomFood({ id: "my-mix-ab12cd", name: "Egg & yogurt mix", cat: "mixed", ingredients: ["eggs", "yogurt"], allergens: ["sesame"], createdAt: 1, updatedAt: 1 }, KNOWN);
+  const foods = [L.expandCustomFood(mix, byId, {}), ...FOODS];
+  const mealReaction = log("1", mix.id, "2026-11-05", "liked", { reactions: ["rash"] });
+  let summaries = L.summarizeAll(state([mealReaction], { [mix.id]: mix }));
+  for (const id of ["egg", "milk", "sesame"]) {
+    const a = stateOf(foods, summaries, id);
+    assert.equal(a.state, "ok", `${id} isn't marked as a reaction`);
+    assert.equal(a.mealReactionDate, "2026-11-05", `${id} carries the caution`);
+    assert.equal(a.lastReactionDate, null);
+  }
+  // A reaction to egg on its own isn't cleared by a meal that also had one.
+  summaries = L.summarizeAll(state([log("0", "eggs", "2026-11-01", "liked", { reactions: ["rash"] }), mealReaction], { [mix.id]: mix }));
+  assert.equal(stateOf(foods, summaries, "egg").state, "reaction");
+  assert.equal(stateOf(foods, summaries, "milk").state, "ok");
+});
+
+// ---------- entries from outside ----------
+
+test("cleanLog only takes real dates and plain ids", () => {
+  const ok = (extra) => L.cleanLog({ ...log("a", "banana", "2026-10-01", "liked"), ...extra }, KNOWN);
+  assert.ok(ok({}));
+  assert.ok(ok({ id: "0b9f3c1e-8a55-4c0e-9a39-1a2b3c4d5e6f" }), "ids the app makes");
+  assert.ok(ok({ id: "id-mh2k3l-9x8y7z6w" }));
+  assert.equal(ok({ date: "2026-13-45" }), null, "not a date");
+  assert.equal(ok({ date: "2026-02-30" }), null);
+  assert.equal(ok({ id: "logs/a/b" }), null, "an id can't be a path in the shared log");
+  assert.equal(ok({ id: "__proto__" }), null);
+  assert.equal(ok({ id: "a b" }), null);
+  assert.equal(L.ageInMonths("0024-05-01", "2026-10-15"), null, "a year typed halfway isn't a birth date");
+});
+
+test("mergeBackup counts family foods, to-try entries and baby details too", () => {
+  const food = L.cleanCustomFood({ id: "my-pouch-ab12cd", name: "Pouch", cat: "mixed", ingredients: ["potato"], createdAt: 1, updatedAt: 1 }, KNOWN);
+  const backup = L.makeBackup({ logs: {}, queue: { banana: { foodId: "banana", addedAt: 1 }, kiwi: { foodId: "kiwi", addedAt: 2 } }, profile: { babyName: "Ada", readySigns: [] }, foods: { [food.id]: food } });
+  const current = { ...L.emptyState(), queue: { kiwi: { foodId: "kiwi", addedAt: 9 } } };
+  const first = L.mergeBackup(current, backup, KNOWN);
+  assert.deepEqual([first.added, first.updated, first.foods, first.queued, first.details], [0, 0, 1, 1, 1]);
+  const again = L.mergeBackup(first.state, backup, KNOWN);
+  assert.deepEqual([again.foods, again.queued, again.details], [0, 0, 0], "nothing new the second time");
+});
+
+test("localLeftovers is what this phone has that the shared log doesn't", () => {
+  const local = { logs: { a: log("a", "banana", "2026-10-01", "liked"), b: log("b", "kiwi", "2026-10-02", "liked") }, queue: { banana: { foodId: "banana", addedAt: 1 } }, profile: { babyName: "Ada", birthDate: "2026-04-01", readySigns: [] }, foods: {} };
+  const shared = { logs: { a: local.logs.a }, queue: {}, profile: { babyName: "Ada B", birthDate: "" }, foods: {} };
+  const left = L.localLeftovers(local, shared);
+  assert.deepEqual(Object.keys(left.logs), ["b"]);
+  assert.deepEqual(Object.keys(left.queue), ["banana"]);
+  assert.deepEqual(left.profile, { birthDate: "2026-04-01" }, "only details the shared log has no value for");
+  assert.deepEqual(L.countEntries(left), { tries: 1, foods: 0, queued: 1, details: 1 });
+  assert.deepEqual(L.countEntries(L.localLeftovers(left, { ...shared, logs: local.logs, queue: local.queue, profile: local.profile })), { tries: 0, foods: 0, queued: 0, details: 0 });
+});

@@ -5,6 +5,8 @@ import { ALLERGENS, ALLERGEN_FIRST_FOOD, ALLERGEN_STARTERS, CATEGORIES, CHOKING,
 import { GUIDE } from "../js/data/guide.js";
 import { ICONS } from "../js/data/icons.js";
 import { FOOD_ICONS } from "../js/data/food-icons.js";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const categoryIds = new Set(CATEGORIES.map((c) => c.id));
 const allergenIds = new Set(ALLERGENS.map((a) => a.id));
@@ -106,4 +108,20 @@ test("sync config is either off (null) or a Firebase settings object", async () 
     assert.equal(typeof FIREBASE_CONFIG[key], "string", `FIREBASE_CONFIG.${key}`);
     assert.ok(FIREBASE_CONFIG[key].length > 0, `FIREBASE_CONFIG.${key} is filled in`);
   }
+});
+
+test("every file the offline cache lists exists", () => {
+  // One missing file stops the service worker installing, and with it every
+  // later update to the offline copy of the app.
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const list = readFileSync(root + "sw.js", "utf8").match(/const SHELL = \[([\s\S]*?)\];/);
+  assert.ok(list, "sw.js has a SHELL list");
+  const files = [...list[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(files.length > 20);
+  for (const file of files) assert.ok(existsSync(root + (file === "./" ? "index.html" : file)), `${file} exists`);
+  // Syncing must work offline: the Firebase bundle and the chunk it loads.
+  for (const name of readdirSync(root + "js/vendor")) {
+    if (name !== "firebase-ai.js") assert.ok(files.includes(`js/vendor/${name}`), `js/vendor/${name} is in the offline cache list`);
+  }
+  for (const name of readdirSync(root + "js/data")) assert.ok(files.includes(`js/data/${name}`), `js/data/${name} is in the offline cache list`);
 });

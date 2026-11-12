@@ -102,7 +102,12 @@ export function expandCustomFood(custom, foodsById, categoryIcons) {
 // Foods tried toward the goal: a family food made of listed foods counts as
 // those foods, not as one more.
 export function countsAsFood(food) {
-  return !!food && !(food.custom && food.ingredients.length);
+  return !!food && !isMeal(food);
+}
+
+// A family food made of listed foods.
+function isMeal(food) {
+  return !!food && !!food.custom && food.ingredients.length > 0;
 }
 
 export function todayISO(now = new Date()) {
@@ -124,6 +129,7 @@ export function toISODate(d) {
 function parseISODate(iso) {
   if (typeof iso !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
   const [y, m, d] = iso.split("-").map(Number);
+  if (y < 1900) return null;
   const date = new Date(y, m - 1, d);
   return date.getMonth() === m - 1 ? date : null;
 }
@@ -200,12 +206,14 @@ export function logsForFood(state, foodId) {
 // it, so a food offered again without symptoms moves on from "reaction"; the
 // earlier reaction stays in reactionCount and lastReactionDate. Tries that
 // came from a meal (viaMeal) count too, but a reaction to a meal stays with
-// the meal: here it's only listed in mealReactions.
+// the meal: here it's only listed in mealReactions. lastCleanDate is the
+// latest try with no reaction of either kind.
 export function summarizeLogs(logs) {
   if (!logs.length) return { count: 0, status: "new" };
   const sorted = [...logs].sort(compareLogs);
   const last = sorted[sorted.length - 1];
   const reactions = sorted.filter((l) => (l.reactions || []).length > 0);
+  const clean = sorted.filter((l) => !(l.reactions || []).length && !l.mealReaction);
   const lastTone = OUTCOME_TONE[last.outcome];
   let status = lastTone === "good" ? "liked" : "learning";
   if ((last.reactions || []).length) status = "reaction";
@@ -217,6 +225,7 @@ export function summarizeLogs(logs) {
     lastOutcome: last.outcome,
     reactionCount: reactions.length,
     lastReactionDate: reactions.length ? reactions[reactions.length - 1].date : null,
+    lastCleanDate: clean.length ? clean[clean.length - 1].date : null,
     mealCount: sorted.filter((l) => l.viaMeal).length,
     mealReactions: sorted.filter((l) => l.mealReaction).map((l) => ({ mealId: l.viaMeal, date: l.date })),
     lovedCount: sorted.filter((l) => l.outcome === "loved").length,
@@ -246,20 +255,34 @@ export function summarizeAll(state) {
   return out;
 }
 
+// Where each allergen stands. The most recent tries decide: a reaction to a
+// food with the allergen shows as "reaction" until any food with it is tried
+// again without one (the earlier reaction stays in lastReactionDate). A
+// reaction to a meal could be to anything in it, so it never decides the
+// state: it's reported in mealReactionDate as a caution.
 export function allergenProgress(foods, summaries, todayIso = todayISO()) {
+  const later = (a, b) => (b && (!a || b > a) ? b : a);
   return ALLERGENS.map((a) => {
     const related = foods.filter((f) => f.allergens.includes(a.id));
     const tried = related.filter((f) => summaries.has(f.id));
-    const lastDate = tried.reduce((max, f) => {
-      const d = summaries.get(f.id).lastDate;
-      return !max || d > max ? d : max;
-    }, null);
-    const reaction = tried.some((f) => summaries.get(f.id).status === "reaction");
+    let lastDate = null;
+    let lastCleanDate = null;
+    let lastReactionDate = null;
+    let mealReactionDate = null;
+    for (const f of tried) {
+      const s = summaries.get(f.id);
+      lastDate = later(lastDate, s.lastDate);
+      lastCleanDate = later(lastCleanDate, s.lastCleanDate);
+      if (isMeal(f)) mealReactionDate = later(mealReactionDate, s.lastReactionDate);
+      else lastReactionDate = later(lastReactionDate, s.lastReactionDate);
+      for (const r of s.mealReactions || []) mealReactionDate = later(mealReactionDate, r.date);
+    }
     const daysSince = lastDate ? daysBetween(lastDate, todayIso) : null;
     let state = "new";
-    if (reaction) state = "reaction";
+    // A clean try on the same day as a reaction doesn't clear it.
+    if (lastReactionDate && !(lastCleanDate > lastReactionDate)) state = "reaction";
     else if (lastDate) state = daysSince > ALLERGEN_DUE_DAYS ? "due" : "ok";
-    return { ...a, foods: related, tried, lastDate, daysSince, state };
+    return { ...a, foods: related, tried, lastDate, daysSince, state, lastReactionDate, mealReactionDate };
   });
 }
 
@@ -328,15 +351,18 @@ export function newId() {
 
 const OUTCOME_IDS = new Set(OUTCOMES.map((o) => o.id));
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+// Ids are also document names in the shared log, so keep them to plain
+// characters (no "/" paths, no reserved "__name__" forms).
+const ENTRY_ID = /^(?!__)[A-Za-z0-9_-]{1,100}$/;
 
 // Validate and clean a log entry from an untrusted source (import file,
 // shared store). Returns null when it can't be used.
 export function cleanLog(raw, knownFoodIds) {
   if (!raw || typeof raw !== "object") return null;
   const { id, foodId, date, outcome } = raw;
-  if (typeof id !== "string" || !id || id.length > 100) return null;
+  if (typeof id !== "string" || !ENTRY_ID.test(id)) return null;
   if (!isKnownFoodId(foodId, knownFoodIds)) return null;
-  if (typeof date !== "string" || !ISO_DATE.test(date)) return null;
+  if (!parseISODate(date)) return null;
   if (!OUTCOME_IDS.has(outcome)) return null;
   const log = {
     id,
@@ -366,7 +392,8 @@ export function cleanProfile(raw) {
 
 // Merge an exported backup into the current state. Entries are matched by
 // id; when both sides have the same entry, the more recently edited wins.
-// Returns { state, added, updated }.
+// Returns { state, added, updated } for tries, plus how many family foods
+// (foods), to-try entries (queued) and baby details (details) came in.
 export function mergeBackup(current, backup, knownFoodIds) {
   if (!backup || typeof backup !== "object" || backup.app !== "first-bites") {
     throw new Error("This file isn't a First Bites backup.");
@@ -387,21 +414,53 @@ export function mergeBackup(current, backup, knownFoodIds) {
     }
   }
   const queue = { ...current.queue };
+  let queued = 0;
   for (const [foodId, entry] of Object.entries(backup.queue || {})) {
-    if (!isKnownFoodId(foodId, knownFoodIds)) continue;
-    if (!queue[foodId]) queue[foodId] = { foodId, addedAt: Number(entry && entry.addedAt) || 0 };
+    if (!isKnownFoodId(foodId, knownFoodIds) || queue[foodId]) continue;
+    queue[foodId] = { foodId, addedAt: Number(entry && entry.addedAt) || 0 };
+    queued += 1;
   }
   const foods = { ...(current.foods || {}) };
+  let foodCount = 0;
   for (const raw of Object.values(backup.foods || {})) {
     const food = cleanCustomFood(raw, knownFoodIds);
-    if (food && (!foods[food.id] || (food.updatedAt || 0) > (foods[food.id].updatedAt || 0))) foods[food.id] = food;
+    if (food && (!foods[food.id] || (food.updatedAt || 0) > (foods[food.id].updatedAt || 0))) {
+      foods[food.id] = food;
+      foodCount += 1;
+    }
   }
   const incoming = cleanProfile(backup.profile);
   const profile = { ...current.profile };
+  let details = 0;
   for (const key of Object.keys(incoming)) {
-    if (profile[key] === undefined || profile[key] === "") profile[key] = incoming[key];
+    if (!isBlank(profile[key]) || isBlank(incoming[key])) continue;
+    profile[key] = incoming[key];
+    details += 1;
   }
-  return { state: { logs, queue, profile, foods }, added, updated };
+  return { state: { logs, queue, profile, foods }, added, updated, foods: foodCount, queued, details };
+}
+
+const isBlank = (value) => value === undefined || value === "" || (Array.isArray(value) && !value.length);
+
+// What this phone's own log holds that the shared log doesn't: tries, family
+// foods and to-try entries saved while signed out, and baby details the
+// shared log has no value for. Same shape as a state.
+export function localLeftovers(local, shared) {
+  const missing = (mine, theirs) => Object.fromEntries(Object.entries(mine || {}).filter(([id]) => !(theirs || {})[id]));
+  const profile = {};
+  for (const [key, value] of Object.entries(local.profile || {})) {
+    if (!isBlank(value) && isBlank((shared.profile || {})[key])) profile[key] = value;
+  }
+  return { logs: missing(local.logs, shared.logs), queue: missing(local.queue, shared.queue), profile, foods: missing(local.foods, shared.foods) };
+}
+
+export function countEntries(state) {
+  return {
+    tries: Object.keys(state.logs || {}).length,
+    foods: Object.keys(state.foods || {}).length,
+    queued: Object.keys(state.queue || {}).length,
+    details: Object.keys(state.profile || {}).length,
+  };
 }
 
 export function makeBackup(state, now = new Date()) {
