@@ -2,16 +2,29 @@ rules_version = '2';
 
 // Security rules for the optional First Bites sync (see README.md,
 // "Syncing between your phones"). Paste these into the Firebase console
-// under Firestore Database > Rules, replacing the two example addresses
-// with the emails you and your partner sign in with.
+// under Firestore Database > Rules, replacing the two example ids with the
+// User UIDs of your two accounts (Authentication > Users, "User UID" column).
+//
+// Accounts are matched by UID, not email: a UID can't be claimed by anyone
+// else, whatever the sign-up settings are.
 service cloud.firestore {
   match /databases/{database}/documents {
     function isFamily() {
       return request.auth != null
-        && request.auth.token.email in ['you@example.com', 'partner@example.com'];
+        && request.auth.uid in ['PASTE-YOUR-USER-UID', 'PASTE-YOUR-PARTNERS-USER-UID'];
     }
 
-    match /{document=**} {
+    // Only the four places the app keeps things. Anything else is refused.
+    match /logs/{id} {
+      allow read, write: if isFamily();
+    }
+    match /queue/{id} {
+      allow read, write: if isFamily();
+    }
+    match /foods/{id} {
+      allow read, write: if isFamily();
+    }
+    match /meta/profile {
       allow read, write: if isFamily();
     }
   }

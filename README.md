@@ -15,7 +15,7 @@ served, and any reaction.
 - **Tracker.** Tap the circle on any food tile and pick a face (loved it → wouldn't try) to log today's try in one tap, with **Undo** if you tap the wrong one. **Add details** covers the day (Today, Yesterday or another day), how it was served (with quick picks like *mashed* or *pre-loaded spoon*), any reaction signs and notes. Each tile shows its status (liked, still learning or reaction, each with its own symbol) and how many times it's been tried.
 - **Your own foods.** Add anything that isn't listed, by tapping **Add a food** (or **Add "…"** when a search finds nothing). File it under any category, e.g. kangaroo under Meat & poultry, or under the new **Meals & mixed foods** for pouches and dishes. Say what's in it by picking listed foods: logging the meal then counts as a try of each one (and of its allergens), and their age, choking and allergen advice carries over. A reaction to a meal stays with the meal, with a note on each food in it. Tick any other allergens on the label, and keep the printed ingredients and notes. With sync on, both phones see your foods. Optionally, **read a label from a photo** to fill the form in (see below).
 - **What's next.** Before 6 months, a countdown and a readiness checklist you both can tick. After that, ideas for what to offer next: allergens due again, the next allergen to introduce, your to-try list and iron-rich foods.
-- **Progress.** A ring for foods tried against your goal (100 before the first birthday by default), the nine common allergens as a grid (with a nudge when one hasn't been offered in a week), a to-try list, progress by category, and recent tries grouped by day, showing who logged each one.
+- **Progress.** A ring for foods tried against your goal (100 before the first birthday by default), the nine common allergens as a grid (with a nudge when one hasn't been offered in a week), a to-try list, progress by category, and recent tries grouped by day, showing who logged each one. An allergen shows **Reaction** after a reaction to a food with it, until a food with that allergen is tried again without one; the earlier reaction stays listed with its date. A reaction to a meal is listed as a caution for each allergen in it, since it could have been anything in the meal.
 - **Guide.** Sections that fold open: readiness signs (as a shared checklist), safe set-up, gagging vs. choking, sizes and shapes by age, common choking hazards, allergen introduction, reaction signs, foods to avoid, iron, and how much to offer.
 - **Search and filters** (search stays at the top as you scroll, with a bar to jump between categories; the rest is behind the Filters button) by name (including other names like *courgette* and *capsicum*), category, allergen, what's safe at your baby's age, iron-rich, choking hazards, and tried/liked/still learning/reaction/to-try.
 
@@ -56,8 +56,8 @@ Firebase is Google's app database service. The free plan is plenty for this app.
 
 1. **Create a project.** Go to <https://console.firebase.google.com>, click **Create a project**, name it (e.g. `first-bites`), and turn off Google Analytics (not needed).
 2. **Add a database.** Under **Build → Firestore Database**, click **Create database**, pick a location near you, and start in **production mode**.
-3. **Lock it to the two of you.** Open the **Rules** tab, paste the contents of [`firestore.rules`](firestore.rules), replace the two example email addresses with yours and your partner's, and click **Publish**.
-4. **Create your logins.** Under **Build → Authentication**, click **Get started**, enable **Email/Password**, then on the **Users** tab click **Add user** once for each of you. To stop anyone else making an account, go to **Settings → User actions** and untick **Enable create (sign-up)**.
+3. **Create your logins.** Under **Build → Authentication**, click **Get started**, enable **Email/Password**, then on the **Users** tab click **Add user** once for each of you. To stop anyone else making an account, go to **Settings → User actions** and untick **Enable create (sign-up)**.
+4. **Lock the database to the two of you.** Back under **Firestore Database**, open the **Rules** tab and paste the contents of [`firestore.rules`](firestore.rules). Replace the two example ids with your accounts' ids: on **Authentication → Users**, copy each account's **User UID** (hover over the row for the copy button). Click **Publish**.
 5. **Allow your site.** In **Authentication → Settings → Authorized domains**, add `<your-username>.github.io`.
 6. **Connect the app.** In **Project settings → General → Your apps**, click the web icon (`</>`), register an app (no hosting needed), and copy the `firebaseConfig` object. Paste it into [`js/sync-config.js`](js/sync-config.js) in place of `null`, for example:
 
@@ -73,9 +73,11 @@ Firebase is Google's app database service. The free plan is plenty for this app.
    ```
 
    This config isn't a secret (it only names your project), so it's fine in a public repository. The rules from step 3 are what keep the data private.
-7. Commit the change to the default branch. Once the site redeploys, open the **Baby** tab on each phone and sign in. If a phone already has tries saved from before, tap **Move them to the shared log**.
+7. Commit the change to the default branch. Once the site redeploys, open the **Baby** tab on each phone and sign in. If a phone already has tries, foods you added or a to-try list saved from before, it offers to **Move to shared log** (or **Discard** them). The phone keeps its own copy until the shared log has confirmed it has them.
 
-After that, a try logged on either phone shows up on the other within seconds. Logging works offline too, and catches up when the phone reconnects.
+After that, a try logged on either phone shows up on the other within seconds. Logging works offline too, and catches up when the phone reconnects. Signing out while changes are still waiting for a connection asks first: they would stay on that phone until you sign in there again.
+
+Set up before these rules matched accounts by User UID? The older rules, which list your email addresses, keep working. To switch, paste the new [`firestore.rules`](firestore.rules) with your two User UIDs and publish.
 
 ### Reading food labels from a photo (optional)
 
@@ -92,6 +94,8 @@ Good to know:
 
 - Always check what was read against the pack before saving. Allergens come from the label's "Contains" statement and a second check of the printed ingredients, but a photo can be misread.
 - The free plan has daily limits, which are plenty for a few labels a day. If you hit one, the app says so; type the food in instead.
+- App Check lets requests through from your site, not only from the two of you, so a stranger who opens the site could use up the day's label reads (never your log: that needs your sign-in). Stay on the free plan so it can't cost anything. Firebase's documentation on AI Logic rate limits explains how to lower the per-user limit if you want to tighten it.
+- Salt and sugar on a label are added to the food's notes rather than to what's in it, so they don't count as foods tried.
 - The photo is sent to Google to be read and isn't kept by the app. On the free plan, Google may use what's sent to improve its products.
 - If the reCAPTCHA site sends you to Google Cloud to create the key instead, create a score-based **Website** key for your domain there, register it in App Check as **reCAPTCHA Enterprise**, and add `provider: "recaptcha-enterprise"` next to the site key in `js/sync-config.js`.
 
@@ -127,7 +131,7 @@ The app itself needs no build step: it is plain HTML, CSS and ES modules.
 | `sw.js`, `manifest.webmanifest`, `icons/` | Offline support and home-screen install |
 | `firestore.rules` | Security rules template for Firebase |
 | `scripts/` | Build scripts for the icons, Firebase bundle and Artifact page, and the link checker |
-| `tests/` | `node --test` suites |
+| `tests/` | `node --test` suites (`fake-firestore.js` stands in for Firebase in the sync tests) |
 
 ### Adding or editing a food
 
