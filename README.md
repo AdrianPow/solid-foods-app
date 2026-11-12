@@ -12,11 +12,12 @@ served, and any reaction.
   - common allergens, choking risk, and whether it's iron-rich
   - safety and nutrition tips
   - a link to the food's page on [Solid Starts](https://solidstarts.com/foods/) for their full guide, photos and videos (356 foods have one)
-- **Tracker.** Tap the circle on any food tile and pick a face (loved it → wouldn't try) to log today's try in one tap, with **Undo** if you tap the wrong one. **Add details** covers the day (Today, Yesterday or another day), how it was served (with quick picks like *mashed* or *pre-loaded spoon*), any reaction signs and notes. Each tile shows its status (liked, still learning or reaction, each with its own symbol) and how many times it's been tried.
+- **Tracker.** Tap the circle on any food tile and pick a face (loved it → wouldn't try) to log today's try in one tap, with **Undo** if you tap the wrong one. **Add details** covers the day (Today, Yesterday or another day), how it was served (with quick picks like *mashed* or *pre-loaded spoon*), any reaction signs and notes. Each tile shows its status (liked, still learning or reaction, each with its own symbol) and how many times it's been tried; **Key** above the list explains every symbol and badge.
 - **Your own foods.** Add anything that isn't listed, by tapping **Add a food** (or **Add "…"** when a search finds nothing). File it under any category, e.g. kangaroo under Meat & poultry, or under the new **Meals & mixed foods** for pouches and dishes. Say what's in it by picking listed foods: logging the meal then counts as a try of each one (and of its allergens), and their age, choking and allergen advice carries over. A reaction to a meal stays with the meal, with a note on each food in it. Tick any other allergens on the label, and keep the printed ingredients and notes. With sync on, both phones see your foods. Optionally, **read a label from a photo** to fill the form in (see below).
-- **What's next.** Before 6 months, a countdown and a readiness checklist you both can tick. After that, ideas for what to offer next: allergens due again, the next allergen to introduce, your to-try list and iron-rich foods.
+- **What's next.** Before 6 months, a countdown and a readiness checklist you both can tick. After that, ideas for what to offer next: allergens due again, the next allergen to introduce, your to-try list and iron-rich foods. Tap the heading to fold the list away.
 - **Progress.** A ring for foods tried against your goal (100 before the first birthday by default), the nine common allergens as a grid (with a nudge when one hasn't been offered in a week), a to-try list, progress by category, and recent tries grouped by day, showing who logged each one. An allergen shows **Reaction** after a reaction to a food with it, until a food with that allergen is tried again without one; the earlier reaction stays listed with its date. A reaction to a meal is listed as a caution for each allergen in it, since it could have been anything in the meal.
 - **Guide.** Sections that fold open: readiness signs (as a shared checklist), safe set-up, gagging vs. choking, sizes and shapes by age, common choking hazards, allergen introduction, reaction signs, foods to avoid, iron, and how much to offer.
+- **Light or dark.** The app follows your phone's setting; **Appearance** on the Baby tab sets it to always light or always dark on that phone.
 - **Search and filters** (search stays at the top as you scroll, with a bar to jump between categories; the rest is behind the Filters button) by name (including other names like *courgette* and *capsicum*), category, allergen, what's safe at your baby's age, iron-rich, choking hazards, and tried/liked/still learning/reaction/to-try.
 
 ## About the food information
@@ -122,6 +123,7 @@ The app itself needs no build step: it is plain HTML, CSS and ES modules.
 | --- | --- |
 | `index.html`, `css/styles.css` | Page shell and styles (light and dark) |
 | `js/app.js` | Screens, routing and event handling |
+| `js/theme.js` | The light/dark choice, applied before the page draws |
 | `js/logic.js` | Pure functions: ages, statuses, allergen progress, backup merge |
 | `js/store.js` | Storage: this device, the claude.ai shared database, or Firebase |
 | `js/cloud.js`, `js/sync-config.js` | Optional Firebase sync and label reading: loader and your project config |
@@ -152,7 +154,7 @@ food("avocado", "Avocado", "fruit", {
 })
 ```
 
-Then give it an icon in `js/data/food-icons.js`. Use any name from the [Fluent Emoji Flat set](https://icon-sets.iconify.design/fluent-emoji-flat/), or define a recolored variant in `scripts/build-icons.mjs`, and run `npm run build:icons`.
+Then give it an icon in `js/data/food-icons.js`. Use any name from the [Fluent Emoji Flat set](https://icon-sets.iconify.design/fluent-emoji-flat/), or define a recolored variant in `scripts/build-icons.mjs`, and run `npm run build:icons`. A test fails if one icon is used more than four times in a category, so a grid never fills with the same picture.
 
 Keep ids stable: logged tries reference them. Run `npm test` after editing to check the data.
 

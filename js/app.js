@@ -7,6 +7,7 @@ import * as L from "./logic.js";
 import { CloudStore, LocalStore, describeStoreError, getDeviceName, openStore, pruneLocalState, readLocalState, setDeviceName, writeLocalState } from "./store.js";
 import { describeAuthError, describeLabelError, loadCloud, readLabelImage, readSyncConfig } from "./cloud.js";
 import { LABEL_MODEL, LABEL_PROMPT, labelSchema, parseLabel } from "./label.js";
+import "./theme.js";
 
 const KNOWN_IDS = new Set(FOODS.map((f) => f.id));
 const CAT_LABEL = Object.fromEntries(CATEGORIES.map((c) => [c.id, c.label]));
@@ -1910,6 +1911,7 @@ function renderSetup() {
   const local = app.store && app.store.mode === "local";
   const ownDevice = app.store && app.store.mode !== "shared";
   const disabled = canWrite() ? "" : " disabled";
+  const theme = window.firstBitesTheme ? window.firstBitesTheme.get() : "system";
   main.innerHTML = `
     <div class="page-head">
       <div>
@@ -1944,6 +1946,14 @@ function renderSetup() {
       <section class="panel">
         <h2>Sharing with your partner</h2>
         <div id="sync-box">${syncHTML()}</div>
+      </section>
+      <section class="panel">
+        <h2>Appearance</h2>
+        <fieldset class="field">
+          <legend class="visually-hidden">Light or dark</legend>
+          <div class="choice-row theme-row">${[["system", "Match my phone"], ["light", "Light"], ["dark", "Dark"]].map(([value, label]) => `<label class="choice"><input type="radio" name="theme" value="${value}"${theme === value ? " checked" : ""}><span>${label}</span></label>`).join("")}</div>
+          <span class="hint">Just for this phone: your partner's keeps its own setting.</span>
+        </fieldset>
       </section>
       <section class="panel">
         <h2>Backup</h2>
@@ -2543,7 +2553,9 @@ document.addEventListener("change", (e) => {
     updateFilterDone();
     return;
   }
-  if (t.dataset.readySign) {
+  if (t.name === "theme") {
+    window.firstBitesTheme?.set(t.value);
+  } else if (t.dataset.readySign) {
     toggleReadySign(t);
   } else if (t.dataset.profile) {
     saveProfileField(t);

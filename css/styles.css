@@ -58,6 +58,7 @@
   /* Heights of the two sticky bars. The page measures the real ones. */
   --search-bar-h: 64px;
   --cat-jump-h: 62px;
+  color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -1866,6 +1867,10 @@ fieldset {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
+}
+
+.theme-row {
+  margin-top: 0;
 }
 
 .choice {

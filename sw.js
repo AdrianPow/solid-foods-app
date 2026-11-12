@@ -6,7 +6,7 @@
 // seconds. Google Fonts come from the cache once downloaded. Everything
 // else (Firebase sync traffic, links out) is left alone: caching those would
 // serve stale data.
-const CACHE = "first-bites-v8";
+const CACHE = "first-bites-v9";
 const SHELL = [
   "./",
   "index.html",
@@ -15,6 +15,7 @@ const SHELL = [
   "icons/icon.svg",
   "icons/icon-192.png",
   "js/app.js",
+  "js/theme.js",
   "js/logic.js",
   "js/store.js",
   "js/cloud.js",
