@@ -7,14 +7,15 @@
   --sunk: #eef1e7;
   --ink: #1c251b;
   --ink-2: #4c5849;
-  --ink-3: #6f7a6b;
+  --ink-3: #626d5e;
   --line: #d9dfcf;
+  --track: #d3dac8;
   --pea: #2f6f3a;
   --pea-ink: #ffffff;
   --pea-soft: #e1eedb;
   --yolk: #e9a91c;
   --yolk-soft: #fbefd2;
-  --good: #2c7a45;
+  --good: #2a7542;
   --good-soft: #def0e3;
   --meh: #9a5f08;
   --meh-soft: #fcefd6;
@@ -54,7 +55,9 @@
      at the top on phones, where the header scrolls away. */
   --topbar-h: 57px;
   --sticky-top: calc(env(safe-area-inset-top, 0px) + var(--topbar-h));
+  /* Heights of the two sticky bars. The page measures the real ones. */
   --search-bar-h: 64px;
+  --cat-jump-h: 62px;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -66,6 +69,7 @@
     --ink-2: #b1bcaa;
     --ink-3: #8b9686;
     --line: #2c3528;
+    --track: #3a4634;
     --pea: #8fd085;
     --pea-ink: #0f1a0e;
     --pea-soft: #213220;
@@ -104,6 +108,7 @@
   --ink-2: #b1bcaa;
   --ink-3: #8b9686;
   --line: #2c3528;
+  --track: #3a4634;
   --pea: #8fd085;
   --pea-ink: #0f1a0e;
   --pea-soft: #213220;
@@ -207,6 +212,16 @@ textarea {
 
 button {
   cursor: pointer;
+}
+
+/* No double-tap zoom delay, and our own pressed states instead of the
+   browser's grey flash. */
+a,
+button,
+label,
+summary {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 :focus-visible {
@@ -435,19 +450,38 @@ main {
   white-space: nowrap;
 }
 
-.btn:hover {
-  border-color: var(--ink-3);
+@media (hover: hover) {
+  .btn:hover {
+    border-color: var(--ink-3);
+  }
+
+  .btn-primary:hover {
+    border-color: var(--pea);
+    filter: brightness(1.08);
+  }
+}
+
+.btn:active,
+.chip:active,
+.filter-btn:active,
+.sheet-close:active,
+.stage-btn:active,
+.queue-item:active,
+.ingredient:active,
+.al-cell:active,
+.baby-chip:active,
+.choice input:active + span {
+  transform: scale(0.96);
+}
+
+.tab:active {
+  background: var(--sunk);
 }
 
 .btn-primary {
   background: var(--pea);
   border-color: var(--pea);
   color: var(--pea-ink);
-}
-
-.btn-primary:hover {
-  border-color: var(--pea);
-  filter: brightness(1.08);
 }
 
 .btn-danger {
@@ -548,7 +582,7 @@ main {
 }
 
 .group {
-  scroll-margin-top: calc(var(--sticky-top) + var(--search-bar-h) + 66px);
+  scroll-margin-top: calc(var(--sticky-top) + var(--search-bar-h) + var(--cat-jump-h) + 4px);
 }
 
 .search-clear {
@@ -638,7 +672,13 @@ main {
   border-radius: 10px;
 }
 
-.next-item:hover {
+@media (hover: hover) {
+  .next-item:hover {
+    background: var(--sunk);
+  }
+}
+
+.next-item:active {
   background: var(--sunk);
 }
 
@@ -741,7 +781,7 @@ main {
 
 .chip .count {
   font-variant-numeric: tabular-nums;
-  opacity: 0.75;
+  opacity: 0.85;
   font-weight: 400;
 }
 
@@ -896,18 +936,19 @@ main {
   overflow: hidden;
 }
 
-.tile[data-cat="mixed"] { --tile: var(--t-mixed); }
-.tile[data-cat="fruit"] { --tile: var(--t-fruit); }
-.tile[data-cat="veg"] { --tile: var(--t-veg); }
-.tile[data-cat="grain"] { --tile: var(--t-grain); }
-.tile[data-cat="legume"] { --tile: var(--t-legume); }
-.tile[data-cat="meat"] { --tile: var(--t-meat); }
-.tile[data-cat="fish"] { --tile: var(--t-fish); }
-.tile[data-cat="dairy"] { --tile: var(--t-dairy); }
-.tile[data-cat="nuts"] { --tile: var(--t-nuts); }
-.tile[data-cat="herbs"] { --tile: var(--t-herbs); }
-.tile[data-cat="pantry"] { --tile: var(--t-pantry); }
-.tile[data-cat="drinks"] { --tile: var(--t-drinks); }
+/* Each category's colour, for anything marked with data-cat. */
+[data-cat="mixed"] { --tile: var(--t-mixed); }
+[data-cat="fruit"] { --tile: var(--t-fruit); }
+[data-cat="veg"] { --tile: var(--t-veg); }
+[data-cat="grain"] { --tile: var(--t-grain); }
+[data-cat="legume"] { --tile: var(--t-legume); }
+[data-cat="meat"] { --tile: var(--t-meat); }
+[data-cat="fish"] { --tile: var(--t-fish); }
+[data-cat="dairy"] { --tile: var(--t-dairy); }
+[data-cat="nuts"] { --tile: var(--t-nuts); }
+[data-cat="herbs"] { --tile: var(--t-herbs); }
+[data-cat="pantry"] { --tile: var(--t-pantry); }
+[data-cat="drinks"] { --tile: var(--t-drinks); }
 
 .tile-open {
   all: unset;
@@ -936,6 +977,14 @@ main {
   }
 }
 
+.tile:has(.tile-open:active) {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--t-ink) 40%, transparent);
+}
+
+.tile-check:active svg {
+  transform: scale(0.88);
+}
+
 .tile-icon {
   width: 38px;
   height: 38px;
@@ -959,11 +1008,12 @@ main {
 .tile-name {
   font-size: 0.8125rem;
   font-weight: 700;
-  line-height: 16px;
+  line-height: 18px;
   overflow-wrap: anywhere;
 }
 
-/* Badges flow on after the name, so most tiles need no extra row. */
+/* Badges flow on after the name, so most tiles need no extra row. Spaces
+   (not margins) sit between them, so a badge that wraps starts flush left. */
 .tile-tags {
   display: inline;
 }
@@ -974,11 +1024,11 @@ main {
   justify-content: center;
   height: 16px;
   min-width: 16px;
-  margin-left: 3px;
+  margin-top: 1px;
   padding: 0 4px;
   border-radius: 4px;
   vertical-align: top;
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -1051,7 +1101,7 @@ main {
   background: var(--card);
   color: var(--ink);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--t-ink) 25%, transparent);
-  font-size: 0.625rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   line-height: 16px;
   text-align: center;
@@ -1338,19 +1388,6 @@ main {
   height: 36px;
 }
 
-.big-tile[data-cat="mixed"] { --tile: var(--t-mixed); }
-.big-tile[data-cat="fruit"] { --tile: var(--t-fruit); }
-.big-tile[data-cat="veg"] { --tile: var(--t-veg); }
-.big-tile[data-cat="grain"] { --tile: var(--t-grain); }
-.big-tile[data-cat="legume"] { --tile: var(--t-legume); }
-.big-tile[data-cat="meat"] { --tile: var(--t-meat); }
-.big-tile[data-cat="fish"] { --tile: var(--t-fish); }
-.big-tile[data-cat="dairy"] { --tile: var(--t-dairy); }
-.big-tile[data-cat="nuts"] { --tile: var(--t-nuts); }
-.big-tile[data-cat="herbs"] { --tile: var(--t-herbs); }
-.big-tile[data-cat="pantry"] { --tile: var(--t-pantry); }
-.big-tile[data-cat="drinks"] { --tile: var(--t-drinks); }
-
 .sheet-body {
   display: grid;
   gap: 24px;
@@ -1591,8 +1628,15 @@ main {
   flex-wrap: wrap;
   gap: 8px 16px;
   font-size: var(--step--1);
-  padding-top: 16px;
+  padding-top: 4px;
   border-top: 1px solid var(--line);
+}
+
+.source-links a,
+.guide-items a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
 }
 
 .disclaimer {
@@ -1667,6 +1711,7 @@ fieldset {
 .choice span {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   min-height: 44px;
   padding: 0 14px;
   border-radius: 999px;
@@ -1674,6 +1719,13 @@ fieldset {
   background: var(--card);
   font-weight: 700;
   font-size: var(--step--1);
+}
+
+.choice-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-left: -6px;
 }
 
 .choice input:checked + span {
@@ -1936,8 +1988,10 @@ fieldset {
   text-align: center;
 }
 
-.face-btn:hover {
-  border-color: var(--pea);
+@media (hover: hover) {
+  .face-btn:hover {
+    border-color: var(--pea);
+  }
 }
 
 .face-btn:active {
@@ -1948,6 +2002,10 @@ fieldset {
   width: 38px;
   height: 38px;
   flex: none;
+}
+
+.face-btn span {
+  text-wrap: balance;
 }
 
 .quick-more {
@@ -2039,6 +2097,21 @@ fieldset {
   gap: 6px 12px;
 }
 
+.panel-note {
+  font-size: var(--step--1);
+  color: var(--ink-2);
+}
+
+/* A small link with a full-size tap target that doesn't push the row apart. */
+a.panel-note {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-block: -12px;
+  padding-inline: 10px;
+  margin-inline-end: -10px;
+}
+
 /* Foods tried: a ring for the goal, with the status counts beside it. */
 .hero {
   display: flex;
@@ -2061,7 +2134,7 @@ fieldset {
 
 .ring-track {
   fill: none;
-  stroke: var(--sunk);
+  stroke: var(--track);
   stroke-width: 12;
 }
 
@@ -2311,20 +2384,6 @@ fieldset {
   height: 20px;
 }
 
-.mini-tile[data-cat="mixed"] { --tile: var(--t-mixed); }
-.mini-tile[data-cat="fruit"] { --tile: var(--t-fruit); }
-.mini-tile[data-cat="veg"] { --tile: var(--t-veg); }
-.mini-tile[data-cat="grain"] { --tile: var(--t-grain); }
-.mini-tile[data-cat="legume"] { --tile: var(--t-legume); }
-.mini-tile[data-cat="meat"] { --tile: var(--t-meat); }
-.mini-tile[data-cat="fish"] { --tile: var(--t-fish); }
-.mini-tile[data-cat="dairy"] { --tile: var(--t-dairy); }
-.mini-tile[data-cat="nuts"] { --tile: var(--t-nuts); }
-.mini-tile[data-cat="herbs"] { --tile: var(--t-herbs); }
-.mini-tile[data-cat="pantry"] { --tile: var(--t-pantry); }
-.mini-tile[data-cat="drinks"] { --tile: var(--t-drinks); }
-
-
 .activity .what {
   min-width: 0;
 }
@@ -2335,8 +2394,10 @@ fieldset {
   text-decoration: none;
 }
 
-.activity .what a:hover {
-  text-decoration: underline;
+@media (hover: hover) {
+  .activity .what a:hover {
+    text-decoration: underline;
+  }
 }
 
 .activity .sub {

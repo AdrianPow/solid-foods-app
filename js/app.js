@@ -403,7 +403,7 @@ function renderFoods() {
         <div class="search">
           ${ICON.search}
           <label class="visually-hidden" for="food-search">Search foods</label>
-          <input id="food-search" type="search" autocomplete="off" enterkeyhint="search" placeholder="Search foods, e.g. avocado" value="${esc(app.filters.q)}">
+          <input id="food-search" type="search" autocomplete="off" enterkeyhint="search" placeholder="Search foods" value="${esc(app.filters.q)}">
           <button type="button" class="search-clear" id="search-clear" data-action="clear-search" aria-label="Clear search"${app.filters.q ? "" : " hidden"}>${ICON.close}</button>
         </div>
         <button type="button" class="filter-btn" id="to-top" data-action="to-top" aria-label="Back to top" hidden>${ICON.up}</button>
@@ -418,6 +418,11 @@ function renderFoods() {
     <div id="food-results"></div>`;
   $("#status-chips").addEventListener("scroll", (e) => updateChipFade(e.currentTarget), { passive: true });
   $("#cat-chips").addEventListener("scroll", (e) => updateChipFade(e.currentTarget), { passive: true });
+  if (barSizes) {
+    barSizes.disconnect();
+    barSizes.observe($("#search-bar"));
+    barSizes.observe($("#cat-jump"));
+  }
   renderFoodResults();
 }
 
@@ -513,14 +518,35 @@ function updateScrollUI() {
   current ||= document.querySelector(".group")?.dataset.cat;
   for (const chip of nav.querySelectorAll(".chip")) {
     const on = chip.dataset.group === current;
-    if (on && chip.getAttribute("aria-current") !== "true") {
-      // Leave room for the edge fade, so the current chip shows clearly.
-      const row = $("#cat-chips");
-      row.scrollTo({ left: chip.offsetLeft - row.offsetLeft - 56, behavior: smooth() });
-    }
+    if (on && chip.getAttribute("aria-current") !== "true") showCurrentChip(chip);
     if (on) chip.setAttribute("aria-current", "true");
     else chip.removeAttribute("aria-current");
   }
+}
+
+// Bring the current category's chip into view once scrolling settles: a fast
+// flick passes several categories, and chasing each one makes the row judder.
+let chipTimer;
+function showCurrentChip(chip) {
+  clearTimeout(chipTimer);
+  chipTimer = setTimeout(() => {
+    const row = $("#cat-chips");
+    if (!row || !chip.isConnected) return;
+    // Leave room for the edge fade, so the current chip shows clearly.
+    row.scrollTo({ left: chip.offsetLeft - row.offsetLeft - 56, behavior: smooth() });
+  }, 120);
+}
+
+// The sticky bars' real heights, for the offsets that depend on them (they
+// grow with larger text settings).
+const barSizes = typeof ResizeObserver === "function" ? new ResizeObserver(measureBars) : null;
+function measureBars() {
+  const bar = $("#search-bar");
+  const nav = $("#cat-jump");
+  if (!bar) return;
+  const root = document.documentElement.style;
+  root.setProperty("--search-bar-h", `${bar.offsetHeight}px`);
+  if (nav && !nav.hidden) root.setProperty("--cat-jump-h", `${nav.offsetHeight}px`);
 }
 
 let scrollQueued = false;
@@ -662,7 +688,7 @@ function tileHTML(food) {
   return `<div class="tile st-${status}" data-cat="${food.cat}">
     <button type="button" class="tile-open" data-open="${food.id}" aria-label="${esc([food.name, ageTitle, ...extras, STATUS_LABEL[status]].join(". "))}.">
       ${iconHTML(food, "tile-icon")}
-      <span class="tile-name">${esc(food.name)}${tags.length ? `<span class="tile-tags" aria-hidden="true">${tags.join("")}</span>` : ""}</span>
+      <span class="tile-name">${esc(food.name)}${tags.length ? ` <span class="tile-tags" aria-hidden="true">${tags.join(" ")}</span>` : ""}</span>
     </button>
     ${canWrite() ? `<button type="button" class="tile-check${app.popFood === food.id ? " pop" : ""}" data-action="log" data-food="${food.id}" aria-label="${esc(markLabel)}">${mark}</button>` : `<span class="tile-check" aria-hidden="true">${mark}</span>`}
   </div>`;
@@ -1360,7 +1386,7 @@ function openLogDialog(foodId, logId, { reaction = false } = {}) {
         <fieldset class="field">
           <legend>How did it go?</legend>
           <div class="choice-row">
-            ${OUTCOMES.map((o) => `<label class="choice"><input type="radio" name="outcome" value="${o.id}"${log.outcome === o.id ? " checked" : ""} required><span>${esc(o.label)}</span></label>`).join("")}
+            ${OUTCOMES.map((o) => `<label class="choice"><input type="radio" name="outcome" value="${o.id}"${log.outcome === o.id ? " checked" : ""} required><span><svg class="choice-icon" aria-hidden="true" focusable="false"><use href="#ic-${o.icon}"></use></svg>${esc(o.label)}</span></label>`).join("")}
           </div>
         </fieldset>
         <div class="field">
@@ -1541,7 +1567,10 @@ function ringHTML(value, max) {
   const r = 52;
   const c = 2 * Math.PI * r;
   const filled = Math.min(1, value / max) * c;
-  return `<svg class="ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="ring-track" cx="60" cy="60" r="${r}"/><circle class="ring-fill" cx="60" cy="60" r="${r}" stroke-dasharray="${filled.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 60 60)"/></svg>`;
+  // Nothing tried yet: leave the track empty (a zero-length arc with round
+  // ends would still draw a dot).
+  const fill = value > 0 ? `<circle class="ring-fill" cx="60" cy="60" r="${r}" stroke-dasharray="${filled.toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 60 60)"/>` : "";
+  return `<svg class="ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="ring-track" cx="60" cy="60" r="${r}"/>${fill}</svg>`;
 }
 
 // A placeholder layout while the shared log loads.
@@ -1644,7 +1673,7 @@ function renderProgress() {
     ${head(loadError() ? "" : `${plural(totalTries, "try", "tries")} logged so far.`)}
     <div class="dash">
       <section class="panel">
-        <div class="panel-head"><h2>Foods tried</h2><a href="#setup" class="muted" style="font-size:var(--step--1)">Goal: ${target}</a></div>
+        <div class="panel-head"><h2>Foods tried</h2><a href="#setup" class="panel-note">Goal: ${target}</a></div>
         <div class="hero">
           <div class="ring-wrap" role="img" aria-label="${tried} of ${target} foods tried">
             ${ringHTML(tried, target)}
@@ -1660,7 +1689,7 @@ function renderProgress() {
         ${beforeOne != null && months != null && months >= 12 && months < 24 ? `<p class="muted"><span class="num">${beforeOne}</span> first tried before the first birthday.</p>` : ""}
       </section>
       <section class="panel">
-        <div class="panel-head"><h2>Common allergens</h2><span class="muted" style="font-size:var(--step--1)">${introduced} of ${allergens.length} introduced</span></div>
+        <div class="panel-head"><h2>Common allergens</h2><span class="panel-note">${introduced} of ${allergens.length} introduced</span></div>
         <ul class="allergen-grid">${allergenCells}</ul>
         <p class="muted" style="font-size:var(--step--1)">Keep each one in the diet weekly. “Offer again” means it hasn't been logged in over ${ALLERGEN_DUE_DAYS} days. Tap one to see its foods.</p>
         ${reactionNotes.length ? `<details class="al-ideas" open><summary>Reactions noted</summary><ul>${reactionNotes.join("")}</ul></details>` : ""}
@@ -2509,6 +2538,7 @@ foodForm.addEventListener("click", (e) => {
 
 // Drag a sheet down to close it, like a native bottom sheet. The drag starts
 // from the header, or anywhere once the sheet is scrolled to the top.
+const DRAG_SLOP = 8;
 function enableSwipeClose(dialog, { allow = () => true, close }) {
   let drag = null;
   const reset = () => {
@@ -2523,7 +2553,7 @@ function enableSwipeClose(dialog, { allow = () => true, close }) {
       if (e.target.closest(".chip-row, .choice-row, .stages, input, textarea, select")) return;
       const fromHead = !!e.target.closest(".sheet-head");
       if (!fromHead && dialog.scrollTop > 0) return;
-      drag = { y: e.touches[0].clientY, t: Date.now(), dy: 0, fromHead };
+      drag = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now(), dy: 0, fromHead, moving: false };
     },
     { passive: true },
   );
@@ -2531,14 +2561,25 @@ function enableSwipeClose(dialog, { allow = () => true, close }) {
     "touchmove",
     (e) => {
       if (!drag) return;
+      const dx = e.touches[0].clientX - drag.x;
       const dy = e.touches[0].clientY - drag.y;
+      // Dragging the header moves the sheet, not the content behind it.
+      if (drag.fromHead && e.cancelable) e.preventDefault();
+      if (!drag.moving) {
+        // Not a drag until the finger has clearly moved down: a tap that
+        // wobbles, or a sideways or diagonal swipe, leaves the sheet alone.
+        if (Math.abs(dx) < DRAG_SLOP && Math.abs(dy) < DRAG_SLOP) return;
+        if (dy <= 0 || Math.abs(dx) > dy) {
+          drag = null;
+          return;
+        }
+        drag.moving = true;
+      }
       if (dy < 0 || (!drag.fromHead && dialog.scrollTop > 0)) {
         drag = null;
         reset();
         return;
       }
-      // Dragging the header moves the sheet, not the content behind it.
-      if (drag.fromHead && e.cancelable) e.preventDefault();
       drag.dy = dy;
       dialog.style.transition = "none";
       dialog.style.transform = `translateY(${dy}px)`;
