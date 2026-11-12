@@ -575,10 +575,16 @@ main {
   box-shadow: 0 1px 0 var(--line), 0 6px 12px -8px rgb(28 37 27 / 0.25);
 }
 
+/* Category chips wear their category's tile colour, which sets them apart
+   from the filter chips above and teaches the colours. */
+.cat-jump .chip {
+  background: var(--tile);
+  border-color: transparent;
+  color: var(--t-ink);
+}
+
 .cat-jump .chip[aria-current="true"] {
-  background: var(--pea);
-  border-color: var(--pea);
-  color: var(--pea-ink);
+  box-shadow: inset 0 0 0 2px var(--t-ink);
 }
 
 .group {
@@ -643,6 +649,88 @@ main {
 
 .next-card h2 {
   font-size: var(--step-1);
+}
+
+/* The ideas list is compact, and folds away to its heading. */
+.next-ideas {
+  gap: 0;
+  padding-block: 4px;
+}
+
+.next-ideas .next-list {
+  padding-bottom: 8px;
+}
+
+.next-ideas .next-item {
+  padding-block: 5px;
+}
+
+.next-ideas .next-item .mini-tile {
+  width: 40px;
+  height: 40px;
+}
+
+.next-ideas .next-item .sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.next-ideas .next-item > span:last-child {
+  min-width: 0;
+}
+
+/* A heading or label that folds something open and closed. */
+.fold-toggle {
+  all: unset;
+  box-sizing: border-box;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h2 > .fold-toggle {
+  width: 100%;
+}
+
+.fold-toggle:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.fold-toggle .chev {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform 160ms ease;
+}
+
+h2 > .fold-toggle .chev {
+  margin-left: auto;
+}
+
+.fold-toggle[aria-expanded="true"] .chev {
+  transform: rotate(180deg);
+}
+
+.fold-count {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--sunk);
+  color: var(--ink-2);
+  font-family: var(--font-body);
+  font-size: var(--step--1);
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .next-card .btn {
@@ -892,10 +980,82 @@ main {
   flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 8px;
+  gap: 0 8px;
   font-size: var(--step--1);
   color: var(--ink-2);
-  margin: 8px 0 16px;
+  margin: 0 0 8px;
+}
+
+/* On a phone the legend takes its own row, under the count and Key. */
+.result-line .legend {
+  order: 3;
+  flex-basis: 100%;
+  padding-bottom: 8px;
+}
+
+@media (min-width: 760px) {
+  .result-line .legend {
+    order: 0;
+    flex-basis: auto;
+    margin-left: auto;
+    padding-bottom: 0;
+  }
+}
+
+.key-toggle {
+  gap: 4px;
+  font-weight: 700;
+  color: var(--pea);
+}
+
+.key-toggle .chev {
+  stroke: currentColor;
+}
+
+/* What the marks and badges on a tile mean. */
+.tile-key {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 2px 20px;
+  font-size: var(--step--1);
+  color: var(--ink-2);
+}
+
+.tile-key li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.key-symbol {
+  display: grid;
+  justify-items: center;
+}
+
+.key-symbol svg {
+  width: 22px;
+  height: 22px;
+}
+
+.key-symbol .tag {
+  margin: 0;
+}
+
+.key-symbol .tag-icon svg {
+  width: 11px;
+  height: 11px;
+}
+
+.key-symbol .tile-count {
+  position: static;
 }
 
 /* ---------- food grid ---------- */

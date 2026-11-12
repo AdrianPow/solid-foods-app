@@ -17,6 +17,26 @@ const REACTION_LABEL = Object.fromEntries(REACTIONS.map((r) => [r.id, r.label]))
 const STATUS_LABEL = { new: "Not tried yet", liked: "Liked", learning: "Still learning", reaction: "Reaction noted" };
 const VIEWS = ["foods", "progress", "guide", "setup"];
 
+// Small choices remembered on this phone only (not part of the shared log).
+const IDEAS_CLOSED_KEY = "first-bites:ideas-closed";
+
+function readSetting(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSetting(key, value) {
+  try {
+    if (value == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    // Storage blocked: the choice lasts until the app is closed.
+  }
+}
+
 const app = {
   store: null,
   state: L.emptyState(),
@@ -31,6 +51,8 @@ const app = {
   syncConfig: null,
   syncConfigError: "",
   stage: null,
+  ideasClosed: readSetting(IDEAS_CLOSED_KEY) === "1",
+  keyOpen: false,
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -436,15 +458,17 @@ function nextCardHTML() {
   if (months < 6 && !app.summaries.size) return startingSoonHTML(months);
   const ideas = L.suggestNext({ foods: foodList, summaries: app.summaries, queue: app.state.queue, months, firstFoods: ALLERGEN_FIRST_FOOD, ironStarters: IRON_STARTERS });
   if (!ideas.length) return "";
+  // One short line each: the food's own page has the how and why.
   const reason = (idea) => {
-    if (idea.kind === "due") return `${ALLERGEN_LABEL[idea.allergen]} last offered ${relDays(idea.daysSince)}. Offer it again to keep it in the diet.`;
-    if (idea.kind === "allergen") return `First taste of ${ALLERGEN_LABEL[idea.allergen].toLowerCase()}: ${ALLERGEN_STARTERS[idea.allergen]}.`;
-    if (idea.kind === "queued") return "On your to-try list.";
-    return "Iron-rich. Babies need extra iron from about 6 months.";
+    if (idea.kind === "due") return `${ALLERGEN_LABEL[idea.allergen]} last offered ${relDays(idea.daysSince)}`;
+    if (idea.kind === "allergen") return `First taste of ${ALLERGEN_LABEL[idea.allergen].toLowerCase()}`;
+    if (idea.kind === "queued") return "On your to-try list";
+    return "Iron-rich";
   };
-  return `<section class="next-card" aria-labelledby="next-title">
-    <h2 id="next-title">Ideas for next</h2>
-    <ul class="next-list">${ideas
+  const open = !app.ideasClosed;
+  return `<section class="next-card next-ideas" aria-labelledby="next-title">
+    <h2 id="next-title"><button type="button" class="fold-toggle" data-action="toggle-ideas" aria-expanded="${open}" aria-controls="next-list">Ideas for next<span class="num fold-count">${ideas.length}</span>${ICON.chevron}</button></h2>
+    <ul class="next-list" id="next-list"${open ? "" : " hidden"}>${ideas
       .map((idea) => {
         const food = foodById(idea.id);
         return `<li><button type="button" class="next-item" data-open="${food.id}">
@@ -516,6 +540,9 @@ function updateScrollUI() {
     current = group.dataset.cat;
   }
   current ||= document.querySelector(".group")?.dataset.cat;
+  // At the very bottom the last category is the one in view, even when it's
+  // too short to reach the top of the screen.
+  if (innerHeight + scrollY >= document.documentElement.scrollHeight - 2) current = [...document.querySelectorAll(".group")].pop()?.dataset.cat || current;
   for (const chip of nav.querySelectorAll(".chip")) {
     const on = chip.dataset.group === current;
     if (on && chip.getAttribute("aria-current") !== "true") showCurrentChip(chip);
@@ -566,7 +593,7 @@ window.addEventListener(
 function renderCatJump(groups) {
   const nav = $("#cat-jump");
   nav.hidden = groups.length < 2;
-  $("#cat-chips").innerHTML = groups.map((g) => `<button type="button" class="chip" data-group="${g.id}">${esc(g.short)}</button>`).join("");
+  $("#cat-chips").innerHTML = groups.map((g) => `<button type="button" class="chip" data-group="${g.id}" data-cat="${g.id}">${esc(g.short)}</button>`).join("");
   updateChipFade($("#cat-chips"));
 }
 
@@ -673,7 +700,7 @@ function tileHTML(food) {
   if (food.age == null) tags.push('<span class="tag tag-bad" title="Avoid for young children">Avoid</span>');
   else if (waiting) tags.push(`<span class="tag tag-wait" title="${esc(L.formatAgeRule(food))}">${ageTag(food)}</span>`);
   if (food.choking === "high") tags.push(`<span class="tag tag-icon" title="Common choking hazard: prepare carefully">${ICON.hazard}</span>`);
-  if (food.iron) tags.push('<span class="tag" title="Iron-rich">Fe</span>');
+  if (food.iron) tags.push('<span class="tag" title="Iron-rich">Iron</span>');
   if (food.allergens.length) {
     const more = food.allergens.length > 1 ? ` +${food.allergens.length - 1}` : "";
     tags.push(`<span class="tag tag-solid" title="Common allergens: ${esc(food.allergens.map((a) => ALLERGEN_LABEL[a]).join(", "))}">${esc(ALLERGEN_SHORT[food.allergens[0]])}${more}</span>`);
@@ -701,6 +728,25 @@ function legendHTML() {
     .join("")}</span>`;
 }
 
+// What the marks and badges on a tile mean. (Their tooltips don't show on a
+// phone.)
+function keyHTML() {
+  const rows = [
+    [`<span class="st-new">${MARK.new}</span>`, "Not tried yet. Tap the circle to log a try."],
+    [`<span class="st-liked">${MARK.liked}</span>`, "Liked"],
+    [`<span class="st-learning">${MARK.learning}</span>`, "Still learning: tried, but not a hit yet"],
+    [`<span class="st-reaction">${MARK.reaction}</span>`, "A reaction was noted"],
+    ['<span class="tile-count">3</span>', "Times tried"],
+    ['<span class="tag tag-wait">12m</span>', "Wait until this age"],
+    ['<span class="tag tag-bad">Avoid</span>', "Best avoided for young children"],
+    [`<span class="tag tag-icon">${ICON.hazard}</span>`, "Common choking hazard: prepare carefully"],
+    ['<span class="tag">Iron</span>', "Iron-rich"],
+    ['<span class="tag tag-solid">Milk</span>', "A common allergen in it (+1: and one more)"],
+    [`<span class="tag tag-icon">${ICON.bookmark}</span>`, "On your to-try list"],
+  ];
+  return `<ul class="tile-key" id="tile-key"${app.keyOpen ? "" : " hidden"}>${rows.map(([symbol, text]) => `<li><span class="key-symbol" aria-hidden="true">${symbol}</span>${esc(text)}</li>`).join("")}</ul>`;
+}
+
 function sortFoods(list) {
   if (app.filters.sort === "az") return [...list].sort((a, b) => a.name.localeCompare(b.name));
   if (app.filters.sort === "recent") {
@@ -722,7 +768,8 @@ function renderFoodResults() {
   const tried = list.filter((food) => app.summaries.has(food.id)).length;
   renderFilterBar();
   main.classList.toggle("is-loading", loading());
-  const line = `<p class="result-line"><span class="num">${plural(list.length, "food")} · ${tried} tried</span>${loading() ? '<span class="skeleton skeleton-line" role="status"><span class="visually-hidden">Loading your tracker…</span></span>' : legendHTML()}</p>`;
+  const keyToggle = `<button type="button" class="fold-toggle key-toggle" data-action="toggle-key" aria-expanded="${app.keyOpen}" aria-controls="tile-key">Key${ICON.chevron}</button>`;
+  const line = `<div class="result-line"><span class="num">${plural(list.length, "food")} · ${tried} tried</span>${keyToggle}${loading() ? '<span class="skeleton skeleton-line" role="status"><span class="visually-hidden">Loading your tracker…</span></span>' : legendHTML()}</div>${keyHTML()}`;
   const groups = app.filters.sort === "category" ? CATEGORIES.map((c) => ({ ...c, foods: list.filter((food) => food.cat === c.id) })).filter((g) => g.foods.length) : [];
   renderCatJump(groups);
   requestAnimationFrame(updateScrollUI);
@@ -2266,6 +2313,18 @@ document.addEventListener("click", (e) => {
       t.textContent = open ? "Close all" : "Open all";
       break;
     }
+    case "toggle-ideas": {
+      app.ideasClosed = !app.ideasClosed;
+      writeSetting(IDEAS_CLOSED_KEY, app.ideasClosed ? "1" : null);
+      $("#next-card").innerHTML = nextCardHTML();
+      $("#next-card .fold-toggle")?.focus();
+      break;
+    }
+    case "toggle-key":
+      app.keyOpen = !app.keyOpen;
+      t.setAttribute("aria-expanded", String(app.keyOpen));
+      $("#tile-key").hidden = !app.keyOpen;
+      break;
     case "to-top":
       window.scrollTo({ top: 0, behavior: smooth() });
       $("#food-search").focus({ preventScroll: true });
@@ -2275,7 +2334,7 @@ document.addEventListener("click", (e) => {
       $("#food-search").value = "";
       $("#search-clear").hidden = true;
       $("#food-search").focus();
-      renderFoodResults();
+      showSearchResults();
       break;
     case "log-details":
       openLogDialog(logDialog.dataset.food);
@@ -2434,14 +2493,23 @@ document.addEventListener("click", (e) => {
   }
 });
 
+let searchTimer;
+function showSearchResults() {
+  clearTimeout(searchTimer);
+  if (!$("#food-search")) return;
+  renderFoodResults();
+  // Typing in the stuck search bar: bring the first results up under it.
+  const below = $(".filters", main).getBoundingClientRect().top - $("#search-bar").getBoundingClientRect().bottom;
+  if (below < 0) window.scrollBy(0, below);
+}
+
 document.addEventListener("input", (e) => {
   if (e.target.id === "food-search") {
     app.filters.q = e.target.value;
     $("#search-clear").hidden = !e.target.value;
-    renderFoodResults();
-    // Typing in the stuck search bar: bring the first results up under it.
-    const below = $(".filters", main).getBoundingClientRect().top - $("#search-bar").getBoundingClientRect().bottom;
-    if (below < 0) window.scrollBy(0, below);
+    // Redrawing every tile on each letter makes typing lag on a phone.
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(showSearchResults, 120);
   } else if (e.target.id === "ff-ing") {
     renderIngredientResults();
   } else if (e.target.id === "ff-name") {
