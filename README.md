@@ -84,9 +84,9 @@ Set up before these rules matched accounts by User UID? The older rules, which l
 With sync set up, the **Add a food** form can read a label from a photo: take a picture of the ingredients and allergen statement, and the name, brand, ingredients and allergens are filled in for you to check. It uses Google's Gemini through your own Firebase project, on the free plan (no billing account). It needs a one-time setup, about 10 minutes:
 
 1. **Switch on AI Logic.** In the [Firebase console](https://console.firebase.google.com), open your project, go to **AI Services → AI Logic** and click **Get started**. When asked for a Gemini API provider, choose **Gemini Developer API** (the no-cost option) and finish the steps. This also switches on **App Check** for AI Logic, which only lets requests from your site through.
-2. **Get a reCAPTCHA key** (App Check uses it to recognise your site). Go to the [reCAPTCHA admin console](https://www.google.com/recaptcha/admin/create), sign in with the same Google account, and create a key: label it *First Bites*, choose **Score based (v3)**, and add the domain `<your-username>.github.io`. Copy the **site key** and the **secret key**.
-3. **Register your site with App Check.** In the Firebase console, go to **Security → App Check → Apps**, find your web app, choose **reCAPTCHA**, paste the **secret key** and click **Save**.
-4. **Tell the app the site key.** In [`js/sync-config.js`](js/sync-config.js), paste the **site key** between the quotes in `LABEL_READING`, and commit. (The site key isn't a secret; never paste the secret key here.)
+2. **Get a site key** (App Check uses it to recognise your site). Open [Fraud Defense in the Google Cloud console](https://console.cloud.google.com/security/recaptcha) (Google's new name for reCAPTCHA Enterprise), check your Firebase project is the one selected at the top, and enable the API if asked. Create a key: name it *First Bites*, choose the **Web** (website) type, add the domain `<your-username>.github.io`, and leave **Use checkbox challenge** off. Copy the key's id: that is the **site key**. No billing account is needed; the no-cost tier covers 10,000 checks a month.
+3. **Register your site with App Check.** In the Firebase console, go to **Security → App Check → Apps**, open your web app, and under **Fraud Defense (formerly known as reCAPTCHA Enterprise)** paste the **site key** and click **Save**.
+4. **Tell the app the site key.** In [`js/sync-config.js`](js/sync-config.js), paste the **site key** between the quotes in `LABEL_READING`, and commit.
 
 Once the site has redeployed, open **Add a food** and tap **Read a label from a photo**.
 
@@ -97,7 +97,7 @@ Good to know:
 - App Check lets requests through from your site, not only from the two of you, so a stranger who opens the site could use up the day's label reads (never your log: that needs your sign-in). Stay on the free plan so it can't cost anything. Firebase's documentation on AI Logic rate limits explains how to lower the per-user limit if you want to tighten it.
 - Salt and sugar on a label are added to the food's notes rather than to what's in it, so they don't count as foods tried.
 - The photo is sent to Google to be read and isn't kept by the app. On the free plan, Google may use what's sent to improve its products.
-- If the reCAPTCHA site sends you to Google Cloud to create the key instead, create a score-based **Website** key for your domain there, register it in App Check as **reCAPTCHA Enterprise**, and add `provider: "recaptcha-enterprise"` next to the site key in `js/sync-config.js`.
+- Set up some time ago with a reCAPTCHA v3 key and its secret key? That older kind still works: set `provider: "recaptcha-v3"` in `js/sync-config.js`. Firebase no longer offers it for new set-ups.
 
 ### claude.ai Artifact
 
