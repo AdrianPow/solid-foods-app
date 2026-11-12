@@ -68,6 +68,17 @@ export function loadCloud(config) {
 let labelModel = null;
 let appCheckOn = false;
 
+// Give up on a read after this long. (Google's side stops at about 30
+// seconds anyway, without saying why.)
+const LABEL_TIMEOUT_MS = 40000;
+
+// The model is busy: an answer that comes back at once, and is worth
+// another go.
+function labelReaderBusy(err) {
+  const status = err && err.customErrorData && err.customErrorData.status;
+  return status === 500 || status === 503 || /high demand|overloaded/i.test(String((err && err.message) || ""));
+}
+
 export async function readLabelImage(cloud, settings, { prompt, schema, model }, base64) {
   labelModel ||= (async () => {
     const ai = await import(AI_SDK_PATH);
@@ -77,15 +88,29 @@ export async function readLabelImage(cloud, settings, { prompt, schema, model },
       appCheckOn = true;
     }
     const service = ai.getAI(cloud.app, { backend: new ai.GoogleAIBackend() });
-    return ai.getGenerativeModel(service, {
-      model: settings.model || model,
-      generationConfig: { responseMimeType: "application/json", responseSchema: schema(ai.Schema) },
-    });
+    return ai.getGenerativeModel(
+      service,
+      {
+        model: settings.model || model,
+        generationConfig: { responseMimeType: "application/json", responseSchema: schema(ai.Schema) },
+      },
+      { timeout: LABEL_TIMEOUT_MS },
+    );
   })();
   labelModel.catch(() => (labelModel = null));
   const gemini = await labelModel;
-  const result = await gemini.generateContent([prompt, { inlineData: { data: base64, mimeType: "image/jpeg" } }]);
-  return JSON.parse(result.response.text());
+  const request = [prompt, { inlineData: { data: base64, mimeType: "image/jpeg" } }];
+  // On the no-cost plan the model is often briefly busy: try up to three
+  // times, a little further apart each time.
+  for (const wait of [2000, 5000, null]) {
+    try {
+      const result = await gemini.generateContent(request);
+      return JSON.parse(result.response.text());
+    } catch (err) {
+      if (wait === null || !labelReaderBusy(err)) throw err;
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+  }
 }
 
 // Messages for what can go wrong reading a label.
@@ -100,6 +125,9 @@ export function describeLabelError(err) {
     return "This site isn't set up for label reading yet (App Check). See “Reading food labels from a photo” in the README.";
   }
   if (status === 429 || /quota|resource.?exhausted|rate limit/i.test(message)) return "That's all the label reads the free plan allows for now. Try again later, or type it in.";
+  if (status === 404) return "The Gemini model this app asks for isn't available any more. Set a current one as “model” in js/sync-config.js (see the README).";
+  // No answer in time, or Google saying it's overloaded.
+  if (labelReaderBusy(err) || /timed? ?out|abort|failed to fetch/i.test(message)) return "Google's label reader is busy or slow right now. Wait a minute and try again, or type it in.";
   if (err instanceof SyntaxError) return "Couldn't make sense of that photo. Try again, or type it in.";
   return "Couldn't read the label. Try again, or type it in.";
 }

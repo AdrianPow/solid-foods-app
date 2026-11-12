@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { FOODS } from "../js/data/index.js";
 import { labelSchema, matchIngredients, parseLabel, spotAllergens } from "../js/label.js";
+import { describeLabelError } from "../js/cloud.js";
 
 test("label ingredients are matched to listed foods", () => {
   const { matched, unmatched } = matchIngredients(["Beef mince", "sweet potato", "Carrots", "tomatoes", "water", "thickener (maize starch)", "onion powder"], FOODS);
@@ -48,6 +49,7 @@ test("the label schema builds with the SDK's helpers", () => {
   assert.equal(schema.kind, "object");
   assert.ok(schema.properties.contains.items.enum.includes("shellfish"));
   assert.ok(schema.properties.category.enum.includes("mixed"));
+  assert.equal(schema.optionalProperties, undefined, "every field is asked for, so a light model doesn't skip the allergens");
 });
 
 test("plurals match either way round, and look-alikes aren't matched", () => {
@@ -62,6 +64,8 @@ test("salt and sugar on a label are noted, not counted as foods tried", () => {
   assert.deepEqual(noted, ["salt", "sugar"]);
   assert.deepEqual(unmatched, []);
   assert.deepEqual(parseLabel({ ingredients: ["apple", "sugar"] }, FOODS).noted, ["sugar"]);
+  assert.deepEqual(parseLabel({ ingredients: ["apple"], ingredientsText: "Apple (95%), Sugar, Sea Salt" }, FOODS).noted, ["salt", "sugar"], "also from the printed list");
+  assert.deepEqual(parseLabel({ ingredients: ["apple"], ingredientsText: "Apple. No added sugar." }, FOODS).noted, []);
 });
 
 test("dairy words inside other foods' names don't tick milk", () => {
@@ -72,4 +76,16 @@ test("dairy words inside other foods' names don't tick milk", () => {
   assert.deepEqual(spotAllergens("coconut milk powder (milk protein)"), ["milk"]);
   for (const text of ["buttermilk", "milkfat", "cheddar", "Butter (cream, salt)"]) assert.deepEqual(spotAllergens(text), ["milk"], text);
   assert.deepEqual(spotAllergens("Contains: Brazil nuts"), ["treenut"], "plurals are spotted");
+});
+
+test("label reading errors say what to do", () => {
+  const failed = (message, status) => Object.assign(new Error(message), status ? { customErrorData: { status } } : {});
+  const busy = /busy or slow/;
+  assert.match(describeLabelError(failed("AI: Error fetching from https://example: Failed to fetch (AI/error)")), busy, "no answer in time");
+  assert.match(describeLabelError(failed("This model is currently experiencing high demand.", 500)), busy);
+  assert.match(describeLabelError(failed("The model is overloaded.", 503)), busy);
+  assert.match(describeLabelError(failed("models/old-model is not found", 404)), /model/);
+  assert.match(describeLabelError(failed("Firebase App Check token is invalid.", 401)), /App Check/);
+  assert.match(describeLabelError(failed("You exceeded your current quota", 429)), /free plan/);
+  assert.match(describeLabelError(failed("something else")), /Couldn't read the label/);
 });

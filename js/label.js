@@ -5,16 +5,21 @@
 import { ALLERGENS, CATEGORIES } from "./data/meta.js";
 import { normalizeText } from "./logic.js";
 
-export const LABEL_MODEL = "gemini-3.8-flash";
+// A light, quick model: on the no-cost plan it answers in a few seconds,
+// where the larger ones can take longer than a request is allowed to.
+// LABEL_READING.model in js/sync-config.js overrides it.
+export const LABEL_MODEL = "gemini-3.5-flash-lite";
 
 export const LABEL_PROMPT = `This photo shows the packaging of a food for a baby or young child, often an Australian product. Read only what is printed; never guess.
+
+Fill in every field. Use "" or an empty list for anything the label doesn't show.
 
 - readable: false if the photo doesn't show enough of a food label to read.
 - name: the product as a parent would say it, e.g. "Potato & beef purée". Leave out slogans and age claims.
 - brand: the brand name.
 - category: "mixed" for meals, pouches and anything made of several main foods. Otherwise the one category the food belongs to.
 - ingredientsText: the ingredient list exactly as printed.
-- ingredients: the foods in it as plain everyday words, most first, e.g. ["potato", "beef", "carrot"]. Leave out water, vitamins, minerals, thickeners, acidity regulators and other additives.
+- ingredients: the foods in it as plain everyday words, most first, e.g. ["potato", "beef", "carrot"]. Leave out water, vitamins, minerals, thickeners, acidity regulators and other additives, but keep salt and sugar.
 - contains: allergens the label says the food contains, from a "Contains:" statement or allergens in bold in the ingredients. Crustaceans and molluscs count as shellfish. Almonds, cashews, hazelnuts and other tree nuts count as treenut.
 - mayContain: allergens in a "may contain" or "may be present" statement.
 - otherAllergens: anything else in the allergen statements that doesn't fit the list, e.g. lupin.`;
@@ -34,7 +39,8 @@ export function labelSchema(Schema) {
       mayContain: allergen(),
       otherAllergens: Schema.array({ items: Schema.string() }),
     },
-    optionalProperties: ["name", "brand", "category", "ingredientsText", "ingredients", "contains", "mayContain", "otherAllergens"],
+    // Every field is required: left optional, a lighter model skips the
+    // ingredients and allergens.
   });
 }
 
@@ -129,6 +135,11 @@ export function parseLabel(answer, foods) {
   const a = answer && typeof answer === "object" ? answer : {};
   const text = typeof a.ingredientsText === "string" ? a.ingredientsText.trim().slice(0, 2000) : "";
   const { matched, unmatched, noted } = matchIngredients(strings(a.ingredients).slice(0, 30), foods);
+  // Salt and sugar are noted even when the model leaves them off its list.
+  const printed = ` ${normalizeText(text)} `;
+  for (const word of NOTED_FOODS) {
+    if (!noted.includes(word) && printed.includes(` ${word} `) && !new RegExp(` no (added )?${word} `).test(printed)) noted.push(word);
+  }
   const contains = allergenIds(a.contains);
   // Allergen words in the printed ingredients that the model didn't list.
   const spotted = spotAllergens(text).filter((id) => !contains.includes(id));

@@ -94,6 +94,7 @@ Good to know:
 
 - Always check what was read against the pack before saving. Allergens come from the label's "Contains" statement and a second check of the printed ingredients, but a photo can be misread.
 - The free plan has daily limits, which are plenty for a few labels a day. If you hit one, the app says so; type the food in instead.
+- Labels are read with a light Gemini model (`LABEL_MODEL` in `js/label.js`), because on the free plan the larger ones are often too slow to answer in time. To use a different one, or when Google retires this one, set `model` in `LABEL_READING` in `js/sync-config.js`. A read normally takes a few seconds; when Google's side is busy the app says so, and it's worth trying again a minute later.
 - App Check lets requests through from your site, not only from the two of you, so a stranger who opens the site could use up the day's label reads (never your log: that needs your sign-in). Stay on the free plan so it can't cost anything. Firebase's documentation on AI Logic rate limits explains how to lower the per-user limit if you want to tighten it.
 - Salt and sugar on a label are added to the food's notes rather than to what's in it, so they don't count as foods tried.
 - The photo is sent to Google to be read and isn't kept by the app. On the free plan, Google may use what's sent to improve its products.

@@ -29,4 +29,7 @@ export const LABEL_READING = {
   // Fraud Defense (what Firebase offers now), "recaptcha-v3" for an older
   // reCAPTCHA v3 key registered with its secret key.
   provider: "recaptcha-enterprise",
+  // Optional: the Gemini model to read labels with, e.g.
+  //   model: "gemini-3.5-flash-lite",
+  // Leave it out to use the app's own choice (LABEL_MODEL in js/label.js).
 };
