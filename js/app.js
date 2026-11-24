@@ -769,11 +769,15 @@ function renderFoodResults() {
   if (!box) return;
   renderStatusChips();
   const list = sortFoods(foodList.filter((food) => matchesFilters(food)));
-  const tried = list.filter((food) => app.summaries.has(food.id)).length;
+  // The same count as the goal ring: a meal made of listed foods counts as
+  // what's in it, so it's listed on its own.
+  const triedList = list.filter((food) => app.summaries.has(food.id));
+  const meals = triedList.filter((food) => !L.countsAsFood(food)).length;
+  const tried = `${triedList.length - meals} tried${meals ? ` + ${`${meals} of your meal${meals === 1 ? "" : "s"}`}` : ""}`;
   renderFilterBar();
   main.classList.toggle("is-loading", loading());
   const keyToggle = `<button type="button" class="fold-toggle key-toggle" data-action="toggle-key" aria-expanded="${app.keyOpen}" aria-controls="tile-key">Key${ICON.chevron}</button>`;
-  const line = `<div class="result-line"><span class="num">${plural(list.length, "food")} · ${tried} tried</span>${keyToggle}${loading() ? '<span class="skeleton skeleton-line" role="status"><span class="visually-hidden">Loading your tracker…</span></span>' : legendHTML()}</div>${keyHTML()}`;
+  const line = `<div class="result-line"><span class="num">${plural(list.length, "food")} · ${tried}</span>${keyToggle}${loading() ? '<span class="skeleton skeleton-line" role="status"><span class="visually-hidden">Loading your tracker…</span></span>' : legendHTML()}</div>${keyHTML()}`;
   const groups = app.filters.sort === "category" ? CATEGORIES.map((c) => ({ ...c, foods: list.filter((food) => food.cat === c.id) })).filter((g) => g.foods.length) : [];
   renderCatJump(groups);
   requestAnimationFrame(updateScrollUI);
@@ -1651,6 +1655,8 @@ function renderProgress() {
   }
   const foodsTried = triedFoods();
   const tried = foodsTried.size;
+  // Your meals made of listed foods: counted as what's in them, not as foods.
+  const mealsTried = [...app.summaries.keys()].filter((id) => foodById(id) && !L.countsAsFood(foodById(id))).length;
   const target = goal();
   // Each logged try once: a meal isn't also counted for what's in it.
   const totalTries = Object.values(app.state.logs).filter((log) => foodById(log.foodId)).length;
@@ -1736,6 +1742,7 @@ function renderProgress() {
             <div class="stat st-reaction">${MARK.reaction}<b>${reactions}</b><span>${reactions === 1 ? "Reaction" : "Reactions"}</span></div>
           </div>
         </div>
+        ${mealsTried ? `<p class="muted">Plus ${`${mealsTried} of your meal${mealsTried === 1 ? "" : "s"}`} tried, counted as the foods in ${mealsTried === 1 ? "it" : "them"}.</p>` : ""}
         ${tried >= target ? `<p class="goal-note">Goal reached! ${tried} different foods.</p>` : ""}
         ${beforeOne != null && months != null && months >= 12 && months < 24 ? `<p class="muted"><span class="num">${beforeOne}</span> first tried before the first birthday.</p>` : ""}
       </section>
